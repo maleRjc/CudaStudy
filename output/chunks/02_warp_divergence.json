@@ -1,0 +1,15 @@
+{
+  "chunk_id": "02_warp_divergence",
+  "title": "SIMT Execution & Warp Divergence",
+  "section_ref": "Section 4.1: Hardware Multithreading & SIMT",
+  "keywords": [
+    "warp",
+    "divergence",
+    "SIMT",
+    "branch",
+    "lockstep"
+  ],
+  "cognitive_focus": "CPU programmer assumes if-else executes independently per thread. In GPU, threads in a warp share one instruction pointer; divergent branches are serialized, halving execution throughput.",
+  "minimal_code": "__global__ void divergentKernel(float* d_out) {\n    int tid = threadIdx.x;\n    if (tid % 2 == 0) {\n        // Branch A (even threads active, odd threads masked/stalled)\n        d_out[tid] = 1.0f;\n    } else {\n        // Branch B (odd threads active, even threads stalled)\n        d_out[tid] = 2.0f;\n    }\n}",
+  "pdf_context_snippet": "--- Page 31 ---\nCUDA Programming Guide, Release 13.3\n1.3. The CUDA platform\nThe NVIDIA CUDA platform consists of many pieces of software and hardware and many important\ntechnologies developed to enable computing on heterogeneous systems. This chapter serves to in-\ntroduce some of the fundamental concepts and components of the CUDA platform that are important\nfor application developers to understand. This chapter, like Programming Model, is not specific to any\nprogramming language, but applies to everything that uses the CUDA platform.\n1.3.1. Compute Capability and Streaming Multiprocessor\nVersions\nEvery NVIDIA GPU has a Compute Capability (CC) number, which indicates what features are supported\nby that GPU and specifies some hardware parameters for that GPU. These specifications are docu-\nmented in the Section 5.1 appendix. A list of all NVIDIA GPUs and their compute capabilities is main-\ntained on the CUDA GPU Compute Capability page.\nCompute capability is denoted as a major and minor version number in the format X.Y where X is the\nmajor version number and Y is the minor version number. For example, CC 12.0 has a major version\nof 12 and a minor version of 0. The compute capability directly corresponds to the version number of\nthe SM. For example, the SMs within a GPU of CC 12.0 have SM version sm_120 . This version is used\nto label binaries.\nSection 5.1.1 shows how to query and determine the compute capability of the GPU(s) in a system.\n1.3.2. CUDA Toolkit and NVIDIA Driver\n"
+}

@@ -1,0 +1,416 @@
+[
+  {
+    "sec_id": "sec_001_introduction",
+    "index": 1,
+    "level": 1,
+    "title": "Introduction",
+    "start_page": 19,
+    "end_page": 19,
+    "page_count": 1
+  },
+  {
+    "sec_id": "sec_002_programming_model",
+    "index": 2,
+    "level": 1,
+    "title": "Programming Model",
+    "start_page": 20,
+    "end_page": 30,
+    "page_count": 11
+  },
+  {
+    "sec_id": "sec_003_the_cuda_platform",
+    "index": 3,
+    "level": 1,
+    "title": "The CUDA platform",
+    "start_page": 31,
+    "end_page": 34,
+    "page_count": 4
+  },
+  {
+    "sec_id": "sec_004_intro_to_cuda_c",
+    "index": 4,
+    "level": 1,
+    "title": "Intro to CUDA C++",
+    "start_page": 35,
+    "end_page": 52,
+    "page_count": 18
+  },
+  {
+    "sec_id": "sec_005_intro_to_cuda_python",
+    "index": 5,
+    "level": 1,
+    "title": "Intro to CUDA Python",
+    "start_page": 53,
+    "end_page": 60,
+    "page_count": 8
+  },
+  {
+    "sec_id": "sec_006_writing_simt_kernels",
+    "index": 6,
+    "level": 1,
+    "title": "Writing SIMT Kernels",
+    "start_page": 61,
+    "end_page": 87,
+    "page_count": 27
+  },
+  {
+    "sec_id": "sec_007_writing_tile_kernels",
+    "index": 7,
+    "level": 1,
+    "title": "Writing Tile Kernels",
+    "start_page": 88,
+    "end_page": 116,
+    "page_count": 29
+  },
+  {
+    "sec_id": "sec_008_asynchronous_execution",
+    "index": 8,
+    "level": 1,
+    "title": "Asynchronous Execution",
+    "start_page": 117,
+    "end_page": 131,
+    "page_count": 15
+  },
+  {
+    "sec_id": "sec_009_unified_and_system_memory",
+    "index": 9,
+    "level": 1,
+    "title": "Unified and System Memory",
+    "start_page": 132,
+    "end_page": 141,
+    "page_count": 10
+  },
+  {
+    "sec_id": "sec_010_nvcc_the_nvidia_cuda_compiler",
+    "index": 10,
+    "level": 1,
+    "title": "NVCC: The NVIDIA CUDA Compiler",
+    "start_page": 142,
+    "end_page": 150,
+    "page_count": 9
+  },
+  {
+    "sec_id": "sec_011_advanced_cuda_apis_and_features",
+    "index": 11,
+    "level": 1,
+    "title": "Advanced CUDA APIs and Features",
+    "start_page": 151,
+    "end_page": 161,
+    "page_count": 11
+  },
+  {
+    "sec_id": "sec_012_advanced_kernel_programming",
+    "index": 12,
+    "level": 1,
+    "title": "Advanced Kernel Programming",
+    "start_page": 162,
+    "end_page": 179,
+    "page_count": 18
+  },
+  {
+    "sec_id": "sec_013_the_cuda_driver_api",
+    "index": 13,
+    "level": 1,
+    "title": "The CUDA Driver API",
+    "start_page": 180,
+    "end_page": 186,
+    "page_count": 7
+  },
+  {
+    "sec_id": "sec_014_programming_systems_with_multiple_gpus",
+    "index": 14,
+    "level": 1,
+    "title": "Programming Systems with Multiple GPUs",
+    "start_page": 187,
+    "end_page": 191,
+    "page_count": 5
+  },
+  {
+    "sec_id": "sec_015_a_tour_of_cuda_features",
+    "index": 15,
+    "level": 1,
+    "title": "A Tour of CUDA Features",
+    "start_page": 192,
+    "end_page": 196,
+    "page_count": 5
+  },
+  {
+    "sec_id": "sec_016_unified_memory",
+    "index": 16,
+    "level": 1,
+    "title": "Unified Memory",
+    "start_page": 197,
+    "end_page": 224,
+    "page_count": 28
+  },
+  {
+    "sec_id": "sec_017_cuda_graphs",
+    "index": 17,
+    "level": 1,
+    "title": "CUDA Graphs",
+    "start_page": 225,
+    "end_page": 271,
+    "page_count": 47
+  },
+  {
+    "sec_id": "sec_018_stream_ordered_memory_allocator",
+    "index": 18,
+    "level": 1,
+    "title": "Stream-Ordered Memory Allocator",
+    "start_page": 272,
+    "end_page": 283,
+    "page_count": 12
+  },
+  {
+    "sec_id": "sec_019_cooperative_groups",
+    "index": 19,
+    "level": 1,
+    "title": "Cooperative Groups",
+    "start_page": 284,
+    "end_page": 291,
+    "page_count": 8
+  },
+  {
+    "sec_id": "sec_020_programmatic_dependent_launch_and_synchronization",
+    "index": 20,
+    "level": 1,
+    "title": "Programmatic Dependent Launch and Synchronization",
+    "start_page": 292,
+    "end_page": 294,
+    "page_count": 3
+  },
+  {
+    "sec_id": "sec_021_green_contexts",
+    "index": 21,
+    "level": 1,
+    "title": "Green Contexts",
+    "start_page": 295,
+    "end_page": 315,
+    "page_count": 21
+  },
+  {
+    "sec_id": "sec_022_lazy_loading",
+    "index": 22,
+    "level": 1,
+    "title": "Lazy Loading",
+    "start_page": 316,
+    "end_page": 317,
+    "page_count": 2
+  },
+  {
+    "sec_id": "sec_023_error_log_management",
+    "index": 23,
+    "level": 1,
+    "title": "Error Log Management",
+    "start_page": 318,
+    "end_page": 319,
+    "page_count": 2
+  },
+  {
+    "sec_id": "sec_024_asynchronous_barriers",
+    "index": 24,
+    "level": 1,
+    "title": "Asynchronous Barriers",
+    "start_page": 320,
+    "end_page": 338,
+    "page_count": 19
+  },
+  {
+    "sec_id": "sec_025_pipelines",
+    "index": 25,
+    "level": 1,
+    "title": "Pipelines",
+    "start_page": 339,
+    "end_page": 346,
+    "page_count": 8
+  },
+  {
+    "sec_id": "sec_026_asynchronous_data_copies",
+    "index": 26,
+    "level": 1,
+    "title": "Asynchronous Data Copies",
+    "start_page": 347,
+    "end_page": 390,
+    "page_count": 44
+  },
+  {
+    "sec_id": "sec_027_work_stealing_with_cluster_launch_control",
+    "index": 27,
+    "level": 1,
+    "title": "Work Stealing with Cluster Launch Control",
+    "start_page": 391,
+    "end_page": 398,
+    "page_count": 8
+  },
+  {
+    "sec_id": "sec_028_l2_cache_control",
+    "index": 28,
+    "level": 1,
+    "title": "L2 Cache Control",
+    "start_page": 399,
+    "end_page": 403,
+    "page_count": 5
+  },
+  {
+    "sec_id": "sec_029_memory_synchronization_domains",
+    "index": 29,
+    "level": 1,
+    "title": "Memory Synchronization Domains",
+    "start_page": 404,
+    "end_page": 405,
+    "page_count": 2
+  },
+  {
+    "sec_id": "sec_030_interprocess_communication",
+    "index": 30,
+    "level": 1,
+    "title": "Interprocess Communication",
+    "start_page": 406,
+    "end_page": 407,
+    "page_count": 2
+  },
+  {
+    "sec_id": "sec_031_virtual_memory_management",
+    "index": 31,
+    "level": 1,
+    "title": "Virtual Memory Management",
+    "start_page": 408,
+    "end_page": 425,
+    "page_count": 18
+  },
+  {
+    "sec_id": "sec_032_extended_gpu_memory",
+    "index": 32,
+    "level": 1,
+    "title": "Extended GPU Memory",
+    "start_page": 426,
+    "end_page": 430,
+    "page_count": 5
+  },
+  {
+    "sec_id": "sec_033_cuda_dynamic_parallelism",
+    "index": 33,
+    "level": 1,
+    "title": "CUDA Dynamic Parallelism",
+    "start_page": 431,
+    "end_page": 440,
+    "page_count": 10
+  },
+  {
+    "sec_id": "sec_034_cuda_interoperability_with_apis",
+    "index": 34,
+    "level": 1,
+    "title": "CUDA Interoperability with APIs",
+    "start_page": 441,
+    "end_page": 473,
+    "page_count": 33
+  },
+  {
+    "sec_id": "sec_035_driver_entry_point_access",
+    "index": 35,
+    "level": 1,
+    "title": "Driver Entry Point Access",
+    "start_page": 474,
+    "end_page": 480,
+    "page_count": 7
+  },
+  {
+    "sec_id": "sec_036_compute_capabilities",
+    "index": 36,
+    "level": 1,
+    "title": "Compute Capabilities",
+    "start_page": 481,
+    "end_page": 488,
+    "page_count": 8
+  },
+  {
+    "sec_id": "sec_037_cuda_environment_variables",
+    "index": 37,
+    "level": 1,
+    "title": "CUDA Environment Variables",
+    "start_page": 489,
+    "end_page": 496,
+    "page_count": 8
+  },
+  {
+    "sec_id": "sec_038_c_language_support",
+    "index": 38,
+    "level": 1,
+    "title": "C++ Language Support",
+    "start_page": 497,
+    "end_page": 560,
+    "page_count": 64
+  },
+  {
+    "sec_id": "sec_039_cc_language_extensions",
+    "index": 39,
+    "level": 1,
+    "title": "C/C++ Language Extensions",
+    "start_page": 561,
+    "end_page": 628,
+    "page_count": 68
+  },
+  {
+    "sec_id": "sec_040_floating_point_computation",
+    "index": 40,
+    "level": 1,
+    "title": "Floating-Point Computation",
+    "start_page": 629,
+    "end_page": 656,
+    "page_count": 28
+  },
+  {
+    "sec_id": "sec_041_device_callable_apis_and_intrinsics",
+    "index": 41,
+    "level": 1,
+    "title": "Device-Callable APIs and Intrinsics",
+    "start_page": 657,
+    "end_page": 686,
+    "page_count": 30
+  },
+  {
+    "sec_id": "sec_042_cuda_c_memory_model",
+    "index": 42,
+    "level": 1,
+    "title": "CUDA C++ Memory Model",
+    "start_page": 687,
+    "end_page": 690,
+    "page_count": 4
+  },
+  {
+    "sec_id": "sec_043_cuda_c_execution_model",
+    "index": 43,
+    "level": 1,
+    "title": "CUDA C++ Execution model",
+    "start_page": 691,
+    "end_page": 696,
+    "page_count": 6
+  },
+  {
+    "sec_id": "sec_044_notice",
+    "index": 44,
+    "level": 1,
+    "title": "Notice",
+    "start_page": 697,
+    "end_page": 697,
+    "page_count": 1
+  },
+  {
+    "sec_id": "sec_045_opencl",
+    "index": 45,
+    "level": 1,
+    "title": "OpenCL",
+    "start_page": 698,
+    "end_page": 698,
+    "page_count": 1
+  },
+  {
+    "sec_id": "sec_046_trademarks",
+    "index": 46,
+    "level": 1,
+    "title": "Trademarks",
+    "start_page": 698,
+    "end_page": 698,
+    "page_count": 1
+  }
+]

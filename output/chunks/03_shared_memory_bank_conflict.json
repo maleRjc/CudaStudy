@@ -1,0 +1,15 @@
+{
+  "chunk_id": "03_shared_memory_bank_conflict",
+  "title": "Shared Memory Architecture & Bank Conflicts",
+  "section_ref": "Section 3.2.4: Shared Memory & Banks",
+  "keywords": [
+    "shared memory",
+    "bank",
+    "bank conflict",
+    "stride",
+    "broadcast"
+  ],
+  "cognitive_focus": "CPU cache access is address-agnostic for parallelism. GPU shared memory is split into 32 independent banks. If multiple threads in a warp hit different addresses in the same bank, accesses are serialized.",
+  "minimal_code": "__shared__ float s_data[1024];\n// Conflict-free: thread i accesses bank i (stride 1)\nfloat val = s_data[threadIdx.x];\n\n// 2-way Bank Conflict: thread 0 & 16 hit bank 0 (stride 2)\nfloat val2 = s_data[threadIdx.x * 2];",
+  "pdf_context_snippet": "--- Page 46 ---\nCUDA Programming Guide, Release 13.3\n(continued from previous page)\n}\n∕∕explicit-memory-begin\nvoid explicitMemExample( int vectorLength)\n{\n∕∕ Pointers for host memory\nfloat* A = nullptr;\nfloat* B = nullptr;\nfloat* C = nullptr;\nfloat* comparisonResult = (float*)malloc(vectorLength *sizeof (float));\n∕∕ Pointers for device memory\nfloat* devA = nullptr;\nfloat* devB = nullptr;\nfloat* devC = nullptr;\n∕∕Allocate Host Memory using cudaMallocHost API. This is best practice\n∕∕ when buffers will be used for copies between CPU and GPU memory\ncudaMallocHost(&A, vectorLength *sizeof (float));\ncudaMallocHost(&B, vectorLength *sizeof (float));\ncudaMallocHost(&C, vectorLength *sizeof (float));\n∕∕ Initialize vectors on the host\ninitArray(A, vectorLength);\ninitArray(B, vectorLength);\n∕∕ start-allocate-and-copy\n∕∕ Allocate memory on the GPU\ncudaMalloc(&devA, vectorLength *sizeof (float));\ncudaMalloc(&devB, vectorLength *sizeof (float));\ncudaMalloc(&devC, vectorLength *sizeof (float));\n∕∕ Copy data to the GPU\ncudaMemcpy(devA, A, vectorLength *sizeof (float), cudaMemcpyDefault);\ncudaMemcpy(devB, B, vectorLength *sizeof (float), cudaMemcpyDefault);\ncudaMemset(devC, 0, vectorLength *sizeof (float));\n∕∕ end-allocate-and-copy\n∕∕ Launch the kernel\nint threads = 256;\nint blocks = cuda::ceil_div(vectorLength, threads);\nvecAdd <<<blocks, threads >>>(devA, devB, devC, vectorLength);\n∕∕ wait for kernel execution to complete\ncudaDeviceSynchronize();\n∕∕ Copy results back to host\ncudaMemcpy(C, "
+}

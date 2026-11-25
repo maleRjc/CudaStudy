@@ -1,0 +1,36 @@
+{
+  "chunk_id": "06_syncthreads_barrier",
+  "title": "块内线程同步屏障与死锁禁忌 (__syncthreads & Barrier Safety)",
+  "conflict": {
+    "misconception": "以为写完共享内存后别的线程就会自然看到，或者以为可以在 if 里面放同步屏障。",
+    "reality": "Warp 之间调度异步且不可控，没有 __syncthreads() 就会读出未写完的脏垃圾。若把屏障放入条件分支，未走该分支的线程永不到达，导致整个硬件块永久死锁挂起！",
+    "why_confusing": "死锁发生时没有崩溃堆栈，程序直接永远失去响应挂死，极难排查。",
+    "physical_metaphor": "旅行团约定集合拍照，如果只让一部分人进暗室集合，剩下的人在门外走掉，大家将永远等不到全员到齐。"
+  },
+  "beats": [
+    {
+      "beat_id": 1,
+      "title": "异步步调冲突：脏数据读取陷阱",
+      "layout_zone": "center",
+      "visual_action": "显示线程快慢不一步调，快线程 t0 试图读取 t3 的共享内存槽位，但 t3 尚未完成写入，读取结果显示为乱码红色问号 'NaN'。",
+      "narration": "缺少同步屏障，快线程只会抓取未写完的脏数据。",
+      "pause_buffer": 0.6
+    },
+    {
+      "beat_id": 2,
+      "title": "致命死锁禁忌：分支内屏障挂死硬件",
+      "layout_zone": "center",
+      "visual_action": "顶部代码显示 'if (tid % 2 == 0) __syncthreads();'。一道红色栅栏降下，只有 t0/t2 抵达，t1/t3 直接绕过离开。栅栏发出蜂鸣报警并显示 '永久死锁 (Deadlock)' 冰冻标志。",
+      "narration": "严禁在分歧条件中安插屏障，那会让硬件陷入永恒等待。",
+      "pause_buffer": 0.8
+    },
+    {
+      "beat_id": 3,
+      "title": "顿悟：全员集合，步调一致",
+      "layout_zone": "bottom",
+      "visual_action": "屏障移至分支外部公共区。绿色安全屏障降下，所有 4 个线程全部抵达打卡，栅栏平稳抬起，整齐划一进入下一个计算阶段。",
+      "narration": "全员步调一致，是并行大厦稳固不倒的基石。",
+      "pause_buffer": 2.2
+    }
+  ]
+}

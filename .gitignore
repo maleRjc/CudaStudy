@@ -1,0 +1,33 @@
+# Virtual Environment & Python
+.venv/
+venv/
+ENV/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+*.spec
+
+# PyInstaller build outputs & large binaries
+build/
+dist/
+*.exe
+
+# Large media outputs (videos, audio clips, manim frames)
+output/audio/
+output/videos/
+output/slide_images/
+output/manim_media/
+media/
+*.mp4
+*.mp3
+*.png
+
+# Documentation large files
+*.pdf
+
+# IDE & OS caches
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

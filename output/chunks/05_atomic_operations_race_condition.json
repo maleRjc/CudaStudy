@@ -1,0 +1,14 @@
+{
+  "chunk_id": "05_atomic_operations_race_condition",
+  "title": "原子操作与读写竞争防护 (Atomic Operations & Race Condition)",
+  "section_ref": "Section 3.2.5: Memory Atomics",
+  "keywords": [
+    "atomicAdd",
+    "race condition",
+    "read-modify-write",
+    "mutual exclusion"
+  ],
+  "cognitive_focus": "在 CPU 串行循环中，sum += 1 自然正确。在成千上万 GPU 线程并发时，Read-Modify-Write 不是原子事务，所有线程同时读取旧值、各自加一、同时覆写，导致更新结果严重丢失，必须调用 atomicAdd 进行硬件级互斥加锁。",
+  "minimal_code": "// 严重竞态 Bug (十万线程并发，最终结果可能仅有数百):\n*counter = *counter + 1;\n\n// 硬件原子事务 (排队独占累加，保证绝对精准):\natomicAdd(counter, 1);",
+  "pdf_context_snippet": "--- Page 84 ---\nCUDA Programming Guide, Release 13.3\nFigure 18: Bank structure in a 32 x 33 shared memory array.\nThe numbers in the boxes indicate the warp index. The colors indicate which bank is associated with that shared\nmemory location.\nOn the level of an entire grid there is no such mechanism to synchronize all threads in a grid. There is\nhowever a mechanism to provide synchronous access to global memory locations via the use of atomic\nfunctions. Atomic functions allow a thread to obtain a lock on a global memory location and perform\na read-modify-write operation on that location. No other thread can access the same location while\nthe lock is held.\n2.3.5.1 C++ std::atomic-like Atomics\nIn C++, CUDA provides similar syntax and behavior as the similarly-named C++ standard library atom-\nics cuda::std::atomic and cuda::std::atomic_ref . CUDA also provides extended C++ atom-\nics cuda::atomic and cuda::atomic_ref which allow the user to specify the thread scope of the\natomic operation. The details of atomic functions are covered in Atomic Functions.\nAn example usage of cuda::atomic_ref to perform a device-wide atomic addition is as follows,\nwhere array is an array of floats, and result is a float pointer to a location in global memory which\nis the location where the sum of the array will be stored.\nC++\n__global__ void sumReduction( int n, float *array, float *result) {\n...\ntid = threadIdx.x + blockIdx.x * blockDim.x;\ncuda::atomic_ref <float, cuda::thread_scope_device > result_"
+}

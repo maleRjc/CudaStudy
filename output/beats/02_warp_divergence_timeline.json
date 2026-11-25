@@ -1,0 +1,260 @@
+{
+  "chunk_id": "02_warp_divergence",
+  "concept_id": "02_warp_divergence",
+  "title": "SIMT Execution & Warp Divergence",
+  "total_video_duration": 271.704,
+  "slides": [
+    {
+      "beat_id": 1,
+      "slide_id": 1,
+      "title": "SIMT执行模型：从CPU思维到GPU现实",
+      "slide_type": "title_overview",
+      "key_points": [
+        "SIMT（单指令多线程）是GPU的核心执行模型，32个线程组成一个warp，共享一个指令指针。",
+        "CPU程序员习惯认为每个线程独立执行if-else分支，但GPU中warp内的线程必须同步执行相同指令。",
+        "理解warp和分支发散是编写高效CUDA代码的关键。"
+      ],
+      "layout_zone": "center",
+      "visual_spec": {
+        "layout": "header_and_bullets",
+        "code_badge": "无代码"
+      },
+      "visual_action": "",
+      "narration": "大家好，今天我们来深入探讨CUDA中的SIMT执行模型与Warp分支发散。首先，SIMT代表单指令多线程，这是GPU硬件多线程的核心。在GPU中，线程被组织成32个一组，称为一个warp。关键点在于：同一个warp内的所有线程共享一个指令指针，它们必须同时执行相同的指令。这与CPU上每个线程独立执行截然不同。很多CPU程序员会误以为if-else分支可以各自独立运行，但在GPU上，如果warp内的线程走不同分支，硬件会串行执行每个分支，导致性能减半。因此，理解这一机制对于优化CUDA程序至关重要。",
+      "audio_file": "E:\\CudaStudy\\output\\audio\\02_warp_divergence_slide_1.mp3",
+      "audio_duration": 37.2,
+      "action_duration": 37.2,
+      "pause_buffer": 1.8,
+      "total_beat_duration": 39.0,
+      "start_time": 0.0,
+      "end_time": 39.0
+    },
+    {
+      "beat_id": 2,
+      "slide_id": 2,
+      "title": "常见误解：if-else真的并行吗？",
+      "slide_type": "code_misconception",
+      "key_points": [
+        "代码示例：divergentKernel中根据tid奇偶性执行不同分支。",
+        "CPU思维：认为偶数线程和奇数线程同时执行各自分支。",
+        "GPU现实：warp内线程共享指令指针，分支必须串行化。"
+      ],
+      "layout_zone": "center",
+      "visual_spec": {
+        "layout": "code_and_hardware_demo",
+        "code_badge": "if (tid % 2 == 0) { ... } else { ... }"
+      },
+      "visual_action": "",
+      "narration": "让我们看一个具体的代码示例。在divergentKernel中，每个线程根据tid的奇偶性执行不同的赋值操作。如果你来自CPU编程背景，可能会直观地认为：偶数线程执行if分支，奇数线程执行else分支，两者同时进行。但GPU不是这样工作的。由于一个warp内的32个线程共享同一个指令指针，当遇到if-else时，硬件会先让满足条件的线程执行if分支，而其他线程被掩码屏蔽、处于停滞状态；然后，再让满足else条件的线程执行else分支，之前活跃的线程被屏蔽。也就是说，两个分支被串行执行，而不是并行。这就是所谓的分支发散，它会导致warp的执行时间加倍。",
+      "audio_file": "E:\\CudaStudy\\output\\audio\\02_warp_divergence_slide_2.mp3",
+      "audio_duration": 50.832,
+      "action_duration": 50.832,
+      "pause_buffer": 1.8,
+      "total_beat_duration": 52.632,
+      "start_time": 39.0,
+      "end_time": 91.632
+    },
+    {
+      "beat_id": 3,
+      "slide_id": 3,
+      "title": "分支发散的硬件行为：串行化与掩码",
+      "slide_type": "manim_physics_demo",
+      "key_points": [
+        "warp内线程分为偶数线程和奇数线程，分别执行不同分支。",
+        "硬件使用掩码机制：执行分支A时，奇数线程被屏蔽；执行分支B时，偶数线程被屏蔽。",
+        "两个分支串行执行，总执行时间为两者之和，吞吐量减半。"
+      ],
+      "layout_zone": "center",
+      "visual_spec": {
+        "layout": "collision_animation",
+        "code_badge": "掩码机制：偶数线程活跃 vs 奇数线程活跃"
+      },
+      "visual_action": "",
+      "narration": "现在我们来详细看看硬件是如何处理分支发散的。假设一个warp包含32个线程，编号0到31。当执行到if (tid % 2 == 0)时，硬件会评估条件：偶数线程（0,2,4,...）满足条件，奇数线程不满足。此时，硬件并不会同时执行两个分支，而是先激活偶数线程，让它们执行if分支的代码，同时奇数线程被掩码（即被禁用，不执行任何操作）。if分支执行完毕后，硬件再激活奇数线程，让它们执行else分支，而偶数线程被掩码。这样，两个分支的指令被串行执行。从时间线上看，warp先花时间执行分支A，再花时间执行分支B，总时间是两者之和。如果分支A和B的指令数相同，那么执行时间就是没有分支时的两倍，吞吐量减半。这就是分支发散带来的性能损失。",
+      "audio_file": "E:\\CudaStudy\\output\\audio\\02_warp_divergence_slide_3.mp3",
+      "audio_duration": 63.504,
+      "action_duration": 63.504,
+      "pause_buffer": 1.8,
+      "total_beat_duration": 65.304,
+      "start_time": 91.632,
+      "end_time": 156.936
+    },
+    {
+      "beat_id": 4,
+      "slide_id": 4,
+      "title": "量化影响：发散如何拖慢执行？",
+      "slide_type": "math_architecture_resolution",
+      "key_points": [
+        "无分支时，warp执行1条指令流；有分支时，执行2条指令流（串行）。",
+        "执行时间：T_divergent = T_branchA + T_branchB ≈ 2 * T_serial。",
+        "吞吐量下降比例取决于分支数量和指令数，最坏情况为1/N（N为分支数）。"
+      ],
+      "layout_zone": "center",
+      "visual_spec": {
+        "layout": "math_formula_and_resolved_grid",
+        "code_badge": "T_divergent = T_A + T_B ≈ 2T"
+      },
+      "visual_action": "",
+      "narration": "让我们量化一下分支发散的影响。假设一个warp没有分支时，执行一段代码需要时间T。如果代码中包含一个if-else，且两个分支的指令数相同，那么warp需要先执行分支A（时间T_A），再执行分支B（时间T_B），总时间T_divergent = T_A + T_B ≈ 2T。这意味着吞吐量下降为原来的一半。更一般地，如果warp内有N个不同的分支路径，且每个路径的指令数相近，那么执行时间将接近N倍，吞吐量降至1/N。当然，实际中分支可能不会均匀分布，但最坏情况就是如此。因此，在编写CUDA内核时，应尽量避免warp内的分支发散，尤其是当分支内的代码量较大时。一个常见的优化方法是让warp内的线程尽可能执行相同的分支，例如通过重新组织数据或使用谓词化（predication）来避免控制流发散。",
+      "audio_file": "E:\\CudaStudy\\output\\audio\\02_warp_divergence_slide_4.mp3",
+      "audio_duration": 65.736,
+      "action_duration": 65.736,
+      "pause_buffer": 1.8,
+      "total_beat_duration": 67.536,
+      "start_time": 156.936,
+      "end_time": 224.472
+    },
+    {
+      "beat_id": 5,
+      "slide_id": 5,
+      "title": "总结与最佳实践：规避分支发散",
+      "slide_type": "summary_best_practice",
+      "key_points": [
+        "warp内线程共享指令指针，分支发散导致串行化，性能下降。",
+        "最佳实践：尽量使warp内线程执行相同分支，避免细粒度分支。",
+        "使用谓词化、数据重排或warp内协作来减少发散。"
+      ],
+      "layout_zone": "center",
+      "visual_spec": {
+        "layout": "summary_and_checklist",
+        "code_badge": "避免warp内分支发散"
+      },
+      "visual_action": "",
+      "narration": "总结一下，SIMT执行模型的核心是warp内线程共享指令指针，这导致了分支发散时的串行化执行。作为CUDA开发者，我们必须时刻警惕分支发散带来的性能损失。最佳实践包括：第一，尽量让warp内的线程执行相同的分支，例如通过数据重排使相邻线程处理相似的数据；第二，对于简单的条件赋值，可以使用谓词化指令（如三元运算符）来避免控制流发散；第三，利用warp内协作（如warp shuffle）来减少分支。记住，分支发散是GPU性能的隐形杀手，理解并规避它，你的CUDA程序才能跑得更快。",
+      "audio_file": "E:\\CudaStudy\\output\\audio\\02_warp_divergence_slide_5.mp3",
+      "audio_duration": 45.432,
+      "action_duration": 45.432,
+      "pause_buffer": 1.8,
+      "total_beat_duration": 47.232,
+      "start_time": 224.472,
+      "end_time": 271.704
+    }
+  ],
+  "beats": [
+    {
+      "beat_id": 1,
+      "slide_id": 1,
+      "title": "SIMT执行模型：从CPU思维到GPU现实",
+      "slide_type": "title_overview",
+      "key_points": [
+        "SIMT（单指令多线程）是GPU的核心执行模型，32个线程组成一个warp，共享一个指令指针。",
+        "CPU程序员习惯认为每个线程独立执行if-else分支，但GPU中warp内的线程必须同步执行相同指令。",
+        "理解warp和分支发散是编写高效CUDA代码的关键。"
+      ],
+      "layout_zone": "center",
+      "visual_spec": {
+        "layout": "header_and_bullets",
+        "code_badge": "无代码"
+      },
+      "visual_action": "",
+      "narration": "大家好，今天我们来深入探讨CUDA中的SIMT执行模型与Warp分支发散。首先，SIMT代表单指令多线程，这是GPU硬件多线程的核心。在GPU中，线程被组织成32个一组，称为一个warp。关键点在于：同一个warp内的所有线程共享一个指令指针，它们必须同时执行相同的指令。这与CPU上每个线程独立执行截然不同。很多CPU程序员会误以为if-else分支可以各自独立运行，但在GPU上，如果warp内的线程走不同分支，硬件会串行执行每个分支，导致性能减半。因此，理解这一机制对于优化CUDA程序至关重要。",
+      "audio_file": "E:\\CudaStudy\\output\\audio\\02_warp_divergence_slide_1.mp3",
+      "audio_duration": 37.2,
+      "action_duration": 37.2,
+      "pause_buffer": 1.8,
+      "total_beat_duration": 39.0,
+      "start_time": 0.0,
+      "end_time": 39.0
+    },
+    {
+      "beat_id": 2,
+      "slide_id": 2,
+      "title": "常见误解：if-else真的并行吗？",
+      "slide_type": "code_misconception",
+      "key_points": [
+        "代码示例：divergentKernel中根据tid奇偶性执行不同分支。",
+        "CPU思维：认为偶数线程和奇数线程同时执行各自分支。",
+        "GPU现实：warp内线程共享指令指针，分支必须串行化。"
+      ],
+      "layout_zone": "center",
+      "visual_spec": {
+        "layout": "code_and_hardware_demo",
+        "code_badge": "if (tid % 2 == 0) { ... } else { ... }"
+      },
+      "visual_action": "",
+      "narration": "让我们看一个具体的代码示例。在divergentKernel中，每个线程根据tid的奇偶性执行不同的赋值操作。如果你来自CPU编程背景，可能会直观地认为：偶数线程执行if分支，奇数线程执行else分支，两者同时进行。但GPU不是这样工作的。由于一个warp内的32个线程共享同一个指令指针，当遇到if-else时，硬件会先让满足条件的线程执行if分支，而其他线程被掩码屏蔽、处于停滞状态；然后，再让满足else条件的线程执行else分支，之前活跃的线程被屏蔽。也就是说，两个分支被串行执行，而不是并行。这就是所谓的分支发散，它会导致warp的执行时间加倍。",
+      "audio_file": "E:\\CudaStudy\\output\\audio\\02_warp_divergence_slide_2.mp3",
+      "audio_duration": 50.832,
+      "action_duration": 50.832,
+      "pause_buffer": 1.8,
+      "total_beat_duration": 52.632,
+      "start_time": 39.0,
+      "end_time": 91.632
+    },
+    {
+      "beat_id": 3,
+      "slide_id": 3,
+      "title": "分支发散的硬件行为：串行化与掩码",
+      "slide_type": "manim_physics_demo",
+      "key_points": [
+        "warp内线程分为偶数线程和奇数线程，分别执行不同分支。",
+        "硬件使用掩码机制：执行分支A时，奇数线程被屏蔽；执行分支B时，偶数线程被屏蔽。",
+        "两个分支串行执行，总执行时间为两者之和，吞吐量减半。"
+      ],
+      "layout_zone": "center",
+      "visual_spec": {
+        "layout": "collision_animation",
+        "code_badge": "掩码机制：偶数线程活跃 vs 奇数线程活跃"
+      },
+      "visual_action": "",
+      "narration": "现在我们来详细看看硬件是如何处理分支发散的。假设一个warp包含32个线程，编号0到31。当执行到if (tid % 2 == 0)时，硬件会评估条件：偶数线程（0,2,4,...）满足条件，奇数线程不满足。此时，硬件并不会同时执行两个分支，而是先激活偶数线程，让它们执行if分支的代码，同时奇数线程被掩码（即被禁用，不执行任何操作）。if分支执行完毕后，硬件再激活奇数线程，让它们执行else分支，而偶数线程被掩码。这样，两个分支的指令被串行执行。从时间线上看，warp先花时间执行分支A，再花时间执行分支B，总时间是两者之和。如果分支A和B的指令数相同，那么执行时间就是没有分支时的两倍，吞吐量减半。这就是分支发散带来的性能损失。",
+      "audio_file": "E:\\CudaStudy\\output\\audio\\02_warp_divergence_slide_3.mp3",
+      "audio_duration": 63.504,
+      "action_duration": 63.504,
+      "pause_buffer": 1.8,
+      "total_beat_duration": 65.304,
+      "start_time": 91.632,
+      "end_time": 156.936
+    },
+    {
+      "beat_id": 4,
+      "slide_id": 4,
+      "title": "量化影响：发散如何拖慢执行？",
+      "slide_type": "math_architecture_resolution",
+      "key_points": [
+        "无分支时，warp执行1条指令流；有分支时，执行2条指令流（串行）。",
+        "执行时间：T_divergent = T_branchA + T_branchB ≈ 2 * T_serial。",
+        "吞吐量下降比例取决于分支数量和指令数，最坏情况为1/N（N为分支数）。"
+      ],
+      "layout_zone": "center",
+      "visual_spec": {
+        "layout": "math_formula_and_resolved_grid",
+        "code_badge": "T_divergent = T_A + T_B ≈ 2T"
+      },
+      "visual_action": "",
+      "narration": "让我们量化一下分支发散的影响。假设一个warp没有分支时，执行一段代码需要时间T。如果代码中包含一个if-else，且两个分支的指令数相同，那么warp需要先执行分支A（时间T_A），再执行分支B（时间T_B），总时间T_divergent = T_A + T_B ≈ 2T。这意味着吞吐量下降为原来的一半。更一般地，如果warp内有N个不同的分支路径，且每个路径的指令数相近，那么执行时间将接近N倍，吞吐量降至1/N。当然，实际中分支可能不会均匀分布，但最坏情况就是如此。因此，在编写CUDA内核时，应尽量避免warp内的分支发散，尤其是当分支内的代码量较大时。一个常见的优化方法是让warp内的线程尽可能执行相同的分支，例如通过重新组织数据或使用谓词化（predication）来避免控制流发散。",
+      "audio_file": "E:\\CudaStudy\\output\\audio\\02_warp_divergence_slide_4.mp3",
+      "audio_duration": 65.736,
+      "action_duration": 65.736,
+      "pause_buffer": 1.8,
+      "total_beat_duration": 67.536,
+      "start_time": 156.936,
+      "end_time": 224.472
+    },
+    {
+      "beat_id": 5,
+      "slide_id": 5,
+      "title": "总结与最佳实践：规避分支发散",
+      "slide_type": "summary_best_practice",
+      "key_points": [
+        "warp内线程共享指令指针，分支发散导致串行化，性能下降。",
+        "最佳实践：尽量使warp内线程执行相同分支，避免细粒度分支。",
+        "使用谓词化、数据重排或warp内协作来减少发散。"
+      ],
+      "layout_zone": "center",
+      "visual_spec": {
+        "layout": "summary_and_checklist",
+        "code_badge": "避免warp内分支发散"
+      },
+      "visual_action": "",
+      "narration": "总结一下，SIMT执行模型的核心是warp内线程共享指令指针，这导致了分支发散时的串行化执行。作为CUDA开发者，我们必须时刻警惕分支发散带来的性能损失。最佳实践包括：第一，尽量让warp内的线程执行相同的分支，例如通过数据重排使相邻线程处理相似的数据；第二，对于简单的条件赋值，可以使用谓词化指令（如三元运算符）来避免控制流发散；第三，利用warp内协作（如warp shuffle）来减少分支。记住，分支发散是GPU性能的隐形杀手，理解并规避它，你的CUDA程序才能跑得更快。",
+      "audio_file": "E:\\CudaStudy\\output\\audio\\02_warp_divergence_slide_5.mp3",
+      "audio_duration": 45.432,
+      "action_duration": 45.432,
+      "pause_buffer": 1.8,
+      "total_beat_duration": 47.232,
+      "start_time": 224.472,
+      "end_time": 271.704
+    }
+  ]
+}

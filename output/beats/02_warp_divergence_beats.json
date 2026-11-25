@@ -1,0 +1,60 @@
+{
+  "chunk_id": "02_warp_divergence",
+  "title": "SIMT Execution & Warp Divergence",
+  "conflict": {
+    "misconception": "CPU程序员认为每个线程独立执行if-else分支，不同线程可以同时走不同路径，互不影响。",
+    "reality": "GPU中一个warp内的32个线程共享同一个指令指针（IP），当遇到分支时，硬件会串行执行每个分支路径，只激活对应条件的线程，其他线程被掩码（masked）并停滞。因此，divergentKernel中偶数线程和奇数线程的赋值操作被串行执行，吞吐量减半。",
+    "why_confusing": "因为从源代码看，每个线程似乎有自己的控制流，且CUDA C++语法与CPU多线程类似，容易让人误以为线程间完全独立。实际上，warp内的线程是锁步（lock-step）执行的，分支发散导致串行化，这种性能影响在代码中不可见，只有理解SIMT架构才能察觉。",
+    "physical_metaphor": "想象一个32人组成的仪仗队，他们必须步伐一致地前进。当遇到岔路口时，队伍不能同时走两条路，而是先让走左边的人前进（右边的人原地等待），再让走右边的人前进（左边的人等待）。虽然最终每个人都到达了目的地，但整体通过岔路口的时间是两条路分别通过时间之和，而不是并行通过。"
+  },
+  "beats": [
+    {
+      "beat_id": 1,
+      "title": "独立线程的错觉",
+      "layout_zone": "center",
+      "visual_action": "在 center 区域，水平排列 32 个蓝色 (#1E90FF) 小圆点，每个圆点上方有一个指向右的箭头，表示独立执行。圆点之间无连接。",
+      "narration": "CPU程序员认为线程独立执行。",
+      "pause_buffer": 1.0
+    },
+    {
+      "beat_id": 2,
+      "title": "共享指令指针",
+      "layout_zone": "center",
+      "visual_action": "在 32 个圆点上方，出现一个红色 (#FF0000) 的大箭头，指向右方，所有圆点下方出现一条水平线连接，表示共享指令指针。",
+      "narration": "GPU中一个warp共享指令指针。",
+      "pause_buffer": 1.5
+    },
+    {
+      "beat_id": 3,
+      "title": "分支路径出现",
+      "layout_zone": "center",
+      "visual_action": "红色箭头前方出现一个分叉点，分成上下两条路径：上路径标记为 'if'，下路径标记为 'else'。32 个圆点中，偶数编号的圆点（如 0,2,4...）变为绿色 (#00FF00)，奇数编号的圆点（如 1,3,5...）变为橙色 (#FFA500)。",
+      "narration": "遇到分支，线程条件不同。",
+      "pause_buffer": 1.0
+    },
+    {
+      "beat_id": 4,
+      "title": "串行执行分支",
+      "layout_zone": "center",
+      "visual_action": "红色箭头先指向上路径 'if'，绿色圆点沿上路径移动，橙色圆点原地不动并变为灰色 (#808080) 表示被掩码。然后红色箭头指向下路径 'else'，橙色圆点恢复颜色并沿下路径移动，绿色圆点原地不动并变为灰色。",
+      "narration": "硬件串行执行每个分支路径。",
+      "pause_buffer": 2.0
+    },
+    {
+      "beat_id": 5,
+      "title": "吞吐量减半",
+      "layout_zone": "bottom",
+      "visual_action": "在 bottom 区域，显示一个水平条形图，左侧为 '并行执行' 条形长度为 1，右侧为 '串行执行' 条形长度为 2，颜色分别为蓝色 (#1E90FF) 和红色 (#FF0000)。",
+      "narration": "分支发散导致吞吐量减半。",
+      "pause_buffer": 1.5
+    },
+    {
+      "beat_id": 6,
+      "title": "锁步执行本质",
+      "layout_zone": "top",
+      "visual_action": "在 top 区域，显示一个 32 人的仪仗队图标，步伐一致前进，遇到岔路口时，一半人先走左边，另一半等待，然后交换。",
+      "narration": "warp内线程锁步执行。",
+      "pause_buffer": 1.0
+    }
+  ]
+}

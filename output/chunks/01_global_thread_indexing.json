@@ -1,0 +1,15 @@
+{
+  "chunk_id": "01_global_thread_indexing",
+  "title": "Thread Hierarchy & Global Linear Indexing",
+  "section_ref": "Section 2.1 & 2.2: Thread Hierarchy",
+  "keywords": [
+    "threadIdx",
+    "blockIdx",
+    "blockDim",
+    "gridDim",
+    "linear index"
+  ],
+  "cognitive_focus": "CPU programmer assumes threadIdx is globally unique like loop variable i. In reality, threadIdx resets to 0 in each block, causing simultaneous overwrite collision.",
+  "minimal_code": "// CPU Mental Model (Wrong for multi-block):\nint idx = threadIdx.x;\nd_out[idx] = data[idx]; // Block 0 and Block 1 overwrite slot 0!\n\n// GPU Reality (Global Identity Resolution):\nint idx = blockIdx.x * blockDim.x + threadIdx.x;\nd_out[idx] = data[idx];",
+  "pdf_context_snippet": "--- Page 16 ---\n5.6.4.5 Device Management . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 667\n5.6.4.6 API Reference . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 667\n5.6.4.7 API Errors and Launch Failures . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 669\n5.6.4.8 Device Runtime Streams . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 669\n5.6.4.9 ECC Errors . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 671\n5.7 CUDA C++ Memory Model . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 671\n5.7.1 Thread Scopes . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 671\n5.7.1.1 Scope Relationships . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 672\n5.7.2 Synchronization primitives . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 672\n5.7.3 Atomicity . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 672\n5.7.4 Data Races . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 673\n5.7.5 Example: Message Passing . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 674\n5.8 CUDA C++ Execution model . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 675\n5.8.1 Host threads . . . . . . . . . . . . . . . . . . . . . . . . . . "
+}

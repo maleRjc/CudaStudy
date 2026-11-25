@@ -1,0 +1,68 @@
+{
+  "chunk_id": "03_shared_memory_bank_conflict",
+  "title": "Shared Memory Architecture & Bank Conflicts",
+  "conflict": {
+    "misconception": "CPU 程序员会认为：只要多个线程访问共享内存的不同地址，这些访问就能像 CPU 缓存一样并行完成，因为地址不同就不会冲突。",
+    "reality": "GPU 共享内存被硬件划分为 32 个独立的 bank，每个 bank 每个时钟周期只能服务一个地址。一个 warp 中的 32 个线程如果访问的地址映射到同一个 bank（即使地址不同），这些访问会被串行化，导致性能下降。",
+    "why_confusing": "在 CPU 上，缓存访问的并行性由缓存端口和一致性协议处理，程序员通常无需关心地址的 bank 映射。而 GPU 共享内存的 bank 冲突是硬件层面的限制，且冲突与否取决于线程索引与 bank 索引的映射关系（如步长），这种映射在代码中不直观，容易忽略。",
+    "physical_metaphor": "想象 32 个并排的停车位（bank），每个车位一次只能停一辆车（服务一个地址）。一个 warp 的 32 个线程就像 32 辆车同时到达停车场。如果每辆车去不同的车位，可以同时停好；但如果多辆车想去同一个车位（即使它们停在不同位置，比如车位 0 和车位 32 都映射到车位 0），就必须排队等待，导致拥堵。"
+  },
+  "beats": [
+    {
+      "beat_id": 1,
+      "title": "CPU 思维引入",
+      "layout_zone": "top",
+      "visual_action": "顶部区域显示一个 CPU 芯片图标（灰色 #808080），周围有 4 个线程圆点（蓝色 #1E90FF）分别指向 4 个不同的内存地址方块（绿色 #32CD32），箭头表示并行访问，无冲突。",
+      "narration": "CPU 上，不同地址访问可并行。",
+      "pause_buffer": 1.0
+    },
+    {
+      "beat_id": 2,
+      "title": "GPU 共享内存结构",
+      "layout_zone": "center",
+      "visual_action": "中心区域显示 32 个并排的矩形 bank（浅灰色 #D3D3D3），编号 0 到 31，上方有 'Shared Memory' 标签。每个 bank 内有一个小锁图标表示一次只能服务一个地址。",
+      "narration": "GPU 共享内存分为 32 个 bank。",
+      "pause_buffer": 1.0
+    },
+    {
+      "beat_id": 3,
+      "title": "无冲突访问",
+      "layout_zone": "center",
+      "visual_action": "32 个线程圆点（蓝色 #1E90FF）从下方同时移动到 bank 0 到 31，每个线程进入一个 bank，箭头一一对应，所有 bank 同时亮起绿色 #32CD32 表示服务完成。",
+      "narration": "每个线程访问不同 bank，并行完成。",
+      "pause_buffer": 1.0
+    },
+    {
+      "beat_id": 4,
+      "title": "冲突访问",
+      "layout_zone": "center",
+      "visual_action": "32 个线程圆点（蓝色 #1E90FF）同时移动到 bank 0，bank 0 亮起红色 #FF0000，其他 bank 灰色。线程在 bank 0 前排队，形成一列，每个线程依次进入 bank 0，其他线程等待。",
+      "narration": "多个线程访问同一 bank，必须排队。",
+      "pause_buffer": 1.5
+    },
+    {
+      "beat_id": 5,
+      "title": "地址映射揭示",
+      "layout_zone": "bottom",
+      "visual_action": "底部区域显示地址映射公式：bank = 地址 % 32。地址 0 和地址 32 的方块（橙色 #FFA500）同时指向 bank 0，箭头汇聚。",
+      "narration": "地址不同，但映射到同一 bank。",
+      "pause_buffer": 2.0
+    },
+    {
+      "beat_id": 6,
+      "title": "性能影响",
+      "layout_zone": "center",
+      "visual_action": "中心区域显示一个时间轴，无冲突时 32 个线程同时完成（绿色条），冲突时线程串行完成（红色条），红色条长度是绿色条的 32 倍。",
+      "narration": "冲突导致串行化，性能下降。",
+      "pause_buffer": 1.5
+    },
+    {
+      "beat_id": 7,
+      "title": "总结",
+      "layout_zone": "top",
+      "visual_action": "顶部区域显示文字 'Bank 冲突：地址不同，bank 相同'，背景为浅灰色 #F0F0F0。",
+      "narration": "地址不同，bank 相同仍冲突。",
+      "pause_buffer": 2.0
+    }
+  ]
+}

@@ -1,0 +1,137 @@
+{
+  "sec_id": "sec_005_intro_to_cuda_python",
+  "topic": "Intro to CUDA Python",
+  "slides": [
+    {
+      "slide_id": 1,
+      "title": "CUDA Python 全景概览：从 C++ 到 Python 的 GPU 编程桥梁",
+      "slide_type": "title_overview",
+      "key_points": [
+        "CUDA Python 是一个庞大且活跃的生态系统，包含多种工具和库",
+        "本章聚焦于直接控制 GPU 并用 Python 编写内核（Kernel）",
+        "重点介绍 CUDA SIMT（单指令多线程）编程模型在 Python 中的实现"
+      ],
+      "narration_script": "各位同学，我们之前已经学习了 CUDA C++ 的集群内核启动方式，现在让我们把目光转向 Python 世界。CUDA Python 并不是一个单一的工具，而是一个由众多库和工具组成的生态系统，它让开发者能够用 Python 直接操控 GPU。本章的核心目标是教会大家如何在 Python 中编写和执行 GPU 内核，而不是仅仅调用现成的高层库。我们将聚焦于 CUDA 的 SIMT 编程模型——也就是单指令多线程模型，这是 GPU 并行计算的基石。通过本章的学习，你将理解如何用 Python 直接控制 GPU 的线程层次结构，编写出高效的并行代码。",
+      "visual_spec": {
+        "layout": "header_and_bullets",
+        "code_badge": "CUDA Python Ecosystem"
+      }
+    },
+    {
+      "slide_id": 2,
+      "title": "CUDA Python 生态系统的核心组件",
+      "slide_type": "concept_breakdown",
+      "key_points": [
+        "cuda.core：提供 Pythonic 的 CUDA 控制接口，如内存和设备管理，相当于 CUDA Runtime 的 Python 版",
+        "cuda.compute：提供 GPU 加速的 CCCL 计算函数",
+        "CuPy：提供 NumPy 的 GPU 加速版本和 ndarray 容器",
+        "cuda.lang：用于编写 SIMT 内核的 Python DSL",
+        "cuda.coop：提供设备可调用的 CCCL 原语",
+        "cuda.tile：用于 Tile 编程模型的 Python DSL",
+        "cuda.pathfinder 和 cuda.bindings：底层工具和绑定"
+      ],
+      "narration_script": "让我们详细拆解 CUDA Python 生态系统的主要组件。首先是 cuda.core，它提供了类似 CUDA Runtime 的 Pythonic 接口，让你可以管理内存、设备等，就像在 C++ 中使用 cudaMalloc 一样，但更加 Python 风格。cuda.compute 则封装了 CCCL 中的 GPU 加速函数，比如排序、归约等，你无需自己编写内核就能直接调用。CuPy 大家可能比较熟悉，它是 NumPy 的 GPU 加速版，提供了 GPU 上的 ndarray，让数组运算自动并行化。而 cuda.lang 是本章的重点，它是一个 Python 领域特定语言（DSL），允许你用 Python 的一个子集来编写 CUDA 内核和设备函数，实现 SIMT 编程。cuda.coop 提供了设备端可调用的协作原语，cuda.tile 则针对 Tile 编程模型。最后，cuda.pathfinder 帮助定位 CUDA 组件，cuda.bindings 提供了对 CUDA 驱动 API、运行时 API 等底层绑定的访问。这些组件共同构成了一个完整的 GPU 编程工具链。",
+      "visual_spec": {
+        "layout": "header_and_bullets",
+        "code_badge": "cuda.core, cuda.compute, CuPy, cuda.lang, cuda.coop, cuda.tile"
+      }
+    },
+    {
+      "slide_id": 3,
+      "title": "两种使用 GPU 的路径：高层库 vs 直接内核编程",
+      "slide_type": "concept_breakdown",
+      "key_points": [
+        "高层库：无需编写 GPU 内核，直接调用函数在 GPU 上运算（如 CuPy、cuda.compute）",
+        "直接内核编程：使用 cuda.lang 等工具显式编写在 GPU 上执行的代码",
+        "NVIDIA 加速计算中心提供了加速 Python 用户指南，适合快速上手",
+        "本章专注于直接控制 GPU 和编写内核，深入理解 SIMT 模型"
+      ],
+      "narration_script": "在 Python 中使用 GPU 有两条主要路径。第一条是使用高层库，比如 CuPy 或 cuda.compute，它们提供了现成的 GPU 加速函数，你不需要编写任何 GPU 内核代码，只需像调用普通 Python 函数一样，它们就会在 GPU 上并行执行。这对于快速实现加速非常方便，NVIDIA 的加速 Python 用户指南就是为这类用户准备的。第二条路径是直接编写 GPU 内核，这正是本章的重点。我们将使用 cuda.lang 这样的工具，用 Python 语法编写在 GPU 上执行的 SIMT 内核，从而获得对 GPU 的完全控制。虽然这需要更多学习成本，但它能让你深入理解 GPU 的并行机制，并实现高度定制化的算法。",
+      "visual_spec": {
+        "layout": "header_and_bullets",
+        "code_badge": "High-level vs Kernel Programming"
+      }
+    },
+    {
+      "slide_id": 4,
+      "title": "SIMT 编程模型在 Python 中的映射：线程、块与网格",
+      "slide_type": "manim_physics_demo",
+      "key_points": [
+        "SIMT：单指令多线程，GPU 同时执行大量线程，每个线程处理不同数据",
+        "线程层次：线程（Thread）→ 线程块（Block）→ 网格（Grid）",
+        "在 cuda.lang 中，通过特殊变量（如 threadIdx、blockIdx）获取线程索引",
+        "Python 内核函数使用 @cuda.jit 装饰器编译为 GPU 代码"
+      ],
+      "narration_script": "现在让我们深入 SIMT 编程模型在 Python 中的具体映射。SIMT 即单指令多线程，是 GPU 并行计算的核心思想：一条指令同时被多个线程执行，但每个线程操作不同的数据。在 CUDA 中，线程被组织成层次结构：多个线程组成一个线程块，多个线程块组成一个网格。在 Python 的 cuda.lang 中，你可以用类似 C++ 的方式访问线程索引，比如 threadIdx.x 表示线程在块内的 x 方向索引，blockIdx.x 表示块在网格中的索引。编写内核时，你使用 @cuda.jit 装饰器将 Python 函数编译为 GPU 可执行代码。下面的动态演示将展示线程如何映射到 GPU 硬件上，以及它们如何协同工作。",
+      "visual_spec": {
+        "layout": "code_and_hardware_demo",
+        "code_badge": "@cuda.jit\ndef kernel(...):\n    tid = cuda.threadIdx.x\n    bid = cuda.blockIdx.x"
+      }
+    },
+    {
+      "slide_id": 5,
+      "title": "编写第一个 CUDA Python 内核：从代码到执行",
+      "slide_type": "code_misconception",
+      "key_points": [
+        "使用 cuda.lang 编写内核函数，通过 @cuda.jit 装饰器编译",
+        "内核启动语法：kernel[grid_dim, block_dim](args...)",
+        "常见误区：Python 内核中不能使用任意 Python 特性，需遵循 DSL 限制",
+        "内存管理：使用 cuda.core 分配设备内存并拷贝数据"
+      ],
+      "narration_script": "让我们动手编写第一个 CUDA Python 内核。首先，你需要从 cuda.lang 导入 jit 装饰器，然后用 @cuda.jit 修饰你的内核函数。在内核中，你可以使用 cuda.threadIdx 等内置变量获取线程索引，就像在 C++ 中一样。启动内核时，使用 kernel[grid_dim, block_dim](args...) 的语法，这非常直观。但要注意一个常见误区：cuda.lang 是一个 Python 子集，并非所有 Python 特性都可用，比如动态类型、异常处理等可能受限。另外，你需要使用 cuda.core 来分配设备内存、在主机和设备间拷贝数据。典型流程是：分配设备内存 → 拷贝数据到设备 → 启动内核 → 拷贝结果回主机。掌握这些步骤，你就能用 Python 编写高效的 GPU 程序了。",
+      "visual_spec": {
+        "layout": "code_and_hardware_demo",
+        "code_badge": "kernel[grid, block](d_in, d_out)"
+      }
+    },
+    {
+      "slide_id": 6,
+      "title": "cuda.lang 与 cuda.coop：设备端协作原语",
+      "slide_type": "concept_breakdown",
+      "key_points": [
+        "cuda.lang 提供 SIMT 内核编写能力，支持设备函数",
+        "cuda.coop 提供设备可调用的 CCCL 原语，如块内同步、归约等",
+        "协作原语允许线程块内线程协同工作，提升算法效率",
+        "示例：使用 cuda.coop 实现块内归约求和"
+      ],
+      "narration_script": "除了基本的内核编写，cuda.lang 还支持定义设备函数，这些函数可以在内核中被调用，实现代码复用。而 cuda.coop 模块则提供了设备可调用的协作原语，这些原语来自 CUDA Core Compute Library（CCCL）。例如，你可以使用 cuda.coop 中的块内同步函数来确保线程块内的所有线程到达某个点后再继续，或者使用块内归约函数来高效地计算一个块内所有线程数据的和。这些原语极大地简化了并行算法的实现，尤其是需要线程间通信的场景。在 Python 中，你只需导入 cuda.coop 并调用相应函数，编译器会将其转换为高效的 GPU 指令。",
+      "visual_spec": {
+        "layout": "header_and_bullets",
+        "code_badge": "cuda.coop.block_reduce_sum()"
+      }
+    },
+    {
+      "slide_id": 7,
+      "title": "cuda.tile 与 Tile 编程模型简介",
+      "slide_type": "concept_breakdown",
+      "key_points": [
+        "cuda.tile 是用于 Tile 编程模型的 Python DSL",
+        "Tile 编程将数据划分为块（Tile），适合矩阵运算等规则并行",
+        "与 SIMT 相比，Tile 模型更抽象，便于优化内存访问",
+        "cuda.tile 内核同样使用 @cuda.jit 装饰器，但语法不同"
+      ],
+      "narration_script": "除了 SIMT 模型，CUDA Python 还提供了 cuda.tile，这是一个用于 Tile 编程模型的 Python DSL。Tile 编程模型将数据划分为二维或三维的块（Tile），每个块由多个线程协作处理。这种模型特别适合矩阵乘法、卷积等规则并行计算，因为它能更好地利用 GPU 的内存层次结构，减少全局内存访问。在 cuda.tile 中，你同样使用 @cuda.jit 装饰器，但内核的编写方式更偏向于声明式，你指定每个线程块处理哪个 Tile，而不是显式地管理每个线程。这降低了编程复杂度，同时允许编译器进行更激进的优化。虽然本章重点在 SIMT，但了解 Tile 模型能帮助你根据问题特点选择合适的编程范式。",
+      "visual_spec": {
+        "layout": "header_and_bullets",
+        "code_badge": "cuda.tile 编程模型"
+      }
+    },
+    {
+      "slide_id": 8,
+      "title": "总结与最佳实践：何时使用 CUDA Python",
+      "slide_type": "summary_best_practice",
+      "key_points": [
+        "CUDA Python 适合快速原型开发、与 Python 生态集成",
+        "直接内核编程提供最大控制权，但需注意 DSL 限制",
+        "利用 cuda.core 管理内存，cuda.lang 编写内核，cuda.coop 实现协作",
+        "性能关键部分可考虑混合使用 C++ 内核与 Python 调用",
+        "始终使用性能分析工具（如 Nsight）优化内核"
+      ],
+      "narration_script": "最后，我们来总结 CUDA Python 的最佳实践。CUDA Python 非常适合快速原型开发，尤其是当你需要与 Python 数据科学栈（如 NumPy、Pandas）紧密集成时。通过 cuda.lang 直接编写内核，你可以获得对 GPU 的完全控制，但要注意它毕竟是 Python 的子集，某些 Python 特性不可用，需要遵循 DSL 规则。对于内存管理，cuda.core 提供了便捷的接口；对于线程协作，cuda.coop 提供了高效的原语。如果你的应用对性能有极致要求，可以考虑将最热点的内核用 C++ 编写，然后通过 Python 调用。无论哪种方式，都不要忘记使用性能分析工具来定位瓶颈。希望本章为你打开用 Python 驾驭 GPU 的大门。",
+      "visual_spec": {
+        "layout": "summary_and_checklist",
+        "code_badge": "CUDA Python Best Practices"
+      }
+    }
+  ]
+}

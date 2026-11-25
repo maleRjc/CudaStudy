@@ -1,0 +1,100 @@
+{
+  "concept_id": "01_global_thread_indexing",
+  "topic": "CUDA 线程层级模型与全局物理寻址",
+  "target_duration_range": "3~5分钟",
+  "slides": [
+    {
+      "slide_id": 1,
+      "title": "课程引言：并行硬件的坐标系与心智冲突",
+      "slide_type": "title_overview",
+      "key_points": [
+        "CPU 循环思维：单个计数器 i 遍历整个数据空间",
+        "GPU 硬件现实：数万物理线程以 Grid/Block 空间网格排布",
+        "核心困惑：为什么单 Block 代码搬到多 Block 会产生静默数据损毁？"
+      ],
+      "narration_script": "欢迎来到 CUDA 底层架构深度精讲。在传统的 CPU 编程世界里，我们要处理一段数组，最自然的思维就是写一个 for 循环，用一个全局唯一的变量 i，从 0 一直遍历到 N。然而当我们迈入 GPU 的超大规模并行体系时，这种一维线性的思维习惯会成为最致命的陷阱。GPU 并不会为你维护一个自动递增的全局索引。相反，硬件将成千上万的物理线程切分成了网格 Grid 和线程块 Block。如果对这一空间层级缺乏透彻理解，你的代码往往会在单块测试时完美运行，而一旦增加数据规模、启动多块网格，就会陷入随机覆写的深渊。",
+      "visual_spec": {
+        "layout": "header_and_bullets",
+        "header_title": "CUDA 线程层级模型与全局寻址",
+        "header_subtitle": "从 CPU 串行循环到 GPU 空间升维",
+        "code_badge": "d_out[i] = data[i];  // CPU 模式 vs GPU 空间映射",
+        "active_elements": [
+          "Grid",
+          "Block",
+          "Thread"
+        ]
+      }
+    },
+    {
+      "slide_id": 2,
+      "title": "直觉陷阱：单 Block 假象与局部坐标覆盖",
+      "slide_type": "code_misconception",
+      "key_points": [
+        "初学者直觉：误以为 threadIdx.x 是全局唯一的",
+        "单 Block 启动 (<<<1, 4>>>)：代码运行毫无瑕疵",
+        "多 Block 启动 (<<<2, 4>>>)：每个 Block 内部各自拥有独立的 t0~t3"
+      ],
+      "narration_script": "我们来看这段看似无害的核函数代码。许多初学者写下了 int idx = threadIdx.x，并直接用它去访问显存数组。如果你的启动配置是 1 个 Block 包含 4 个线程，那么 threadIdx.x 确实是从 0 到 3，与显存槽位一一对应，测试结果完全正确。但请注意，threadIdx 只是线程在所属 Block 内部的'局部工号'！当我们将配置扩展为 2 个 Block 时，Block 0 拥有自己的 0 号到 3 号线程，而 Block 1 同样拥有自己的 0 号到 3 号线程。硬件并不会因为有两个车间就自动给第二个车间的工人编上 4 号工号。",
+      "visual_spec": {
+        "layout": "code_and_hardware_demo",
+        "code_badge": "int idx = threadIdx.x; // 致命局部坐标误用",
+        "show_blocks": 1,
+        "highlight": "threadIdx_local"
+      }
+    },
+    {
+      "slide_id": 3,
+      "title": "硬件物理机理：多线程块并发覆写碰撞",
+      "slide_type": "manim_physics_demo",
+      "key_points": [
+        "Block 0 的 t0 与 Block 1 的 t0 同时发射访存请求",
+        "两条内存总线事务同时锁定显存 [0] 号物理槽位",
+        "非原子写冲突：后到达者覆盖先到达者，前序计算成果完全丢失"
+      ],
+      "narration_script": "现在，让我们将目光投向 GPU 的物理微架构。当两个 Block 同时并发运行时，Block 0 的 0 号线程和 Block 1 的 0 号线程，它们计算出来的 idx 都是 0。这意味着它们会在同一个时间窗口内，向显存物理地址 0 发起写入请求！屏幕中央我们可以看到，两条光束同时激射向同一个内存单元。由于没有互斥保护，硬件总线产生了严重的写冲突。先到达的线程写入的数据，瞬间被后到达的线程强行冲刷抹去。这就是为什么许多并行程序的 Bug 具有随机性和不可重现性——它完全取决于硬件执行单元的微观调度先手。",
+      "visual_spec": {
+        "layout": "collision_animation",
+        "show_blocks": 2,
+        "animate_collision": true,
+        "target_slot": 0
+      }
+    },
+    {
+      "slide_id": 4,
+      "title": "坐标升维：块偏移与线性基底计算",
+      "slide_type": "math_architecture_resolution",
+      "key_points": [
+        "工号独立，车间独立：引入 blockIdx.x 与 blockDim.x",
+        "全局寻址公式：全局ID = 所在块编号 × 块尺寸 + 块内局部偏移",
+        "严格一维连续映射：确保每个物理线程获得全宇宙唯一的身份证"
+      ],
+      "narration_script": "要彻底瓦解这种物理碰撞，核心在于完成从'局部相对坐标'到'全局绝对物理坐标'的数学升维。在 CUDA 硬件体系中，每一个线程的全局身份，不是硬件直接赐予的，而是通过空间基底公式自己计算出来的。公式非常优美而直观：全局索引等于 blockIdx.x 乘以 blockDim.x，再加上 threadIdx.x。其中，blockIdx.x 是车间编号，blockDim.x 是每个车间的定员规模。两者的乘积，就是当前车间在整个显存流水线中的全局起始偏移量。再加上本车间内的相对工号 threadIdx，即可获得在整个显存大空间中独一无二、绝不撞车的物理指针。",
+      "visual_spec": {
+        "layout": "math_formula_and_resolved_grid",
+        "code_badge": "int idx = blockIdx.x * blockDim.x + threadIdx.x;",
+        "show_blocks": 2,
+        "show_resolved_mapping": true
+      }
+    },
+    {
+      "slide_id": 5,
+      "title": "总结沉淀：多维扩展与工程边界检查",
+      "slide_type": "summary_best_practice",
+      "key_points": [
+        "黄金定律：全局 ID 是 GPU 空间寻址的基石",
+        "维度延伸：二维 (blockIdx.y * gridDim.x) 与三维体积展开",
+        "边界防线：if (idx < N) 永远是内存越界访问的第一道保命盾牌"
+      ],
+      "narration_script": "通过本小节的透彻推演，我们建立起了一个不可动摇的 GPU 并行心智模型。第一，永远不要假定局部变量具有全局意义；第二，当我们将网格推广到二维图像或者三维流体仿真时，同样的基底累加逻辑依然适用，只需将每行的块偏移量与线程行偏移量依次折算。最后永远不要忘记，在核函数的第一行加上 if (idx < N) 的越界拦截守卫。这不仅保护了显存安全，更是构建大型鲁棒 CUDA 系统必备的工程肌肉记忆。",
+      "visual_spec": {
+        "layout": "summary_and_checklist",
+        "code_badge": "if (idx < N) { d_out[idx] = ...; }",
+        "checklist": [
+          "确认 Block 规模是否被整除",
+          "确认全局索引是否已加上块偏移",
+          "核函数头部强制添加越界安全检查"
+        ]
+      }
+    }
+  ]
+}

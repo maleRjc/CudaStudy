@@ -1,0 +1,68 @@
+{
+  "chunk_id": "01_global_thread_indexing",
+  "title": "Thread Hierarchy & Global Linear Indexing",
+  "conflict": {
+    "misconception": "CPU 程序员认为 threadIdx.x 像循环变量 i 一样全局唯一，直接用它索引数组就能让每个线程处理不同元素。",
+    "reality": "threadIdx.x 在每个 block 内都从 0 重新计数，不同 block 的线程会得到相同的 threadIdx.x，导致它们同时写入同一内存位置，产生覆盖冲突。",
+    "why_confusing": "因为 threadIdx.x 在单个 block 内确实唯一，且代码在单 block 下运行正确，掩盖了多 block 时的冲突；同时 CPU 的循环变量 i 天然全局唯一，这种思维惯性让人忽略 block 维度的存在。",
+    "physical_metaphor": "每个街区（block）的门牌号都从 1 号开始，不同街区的 1 号住户如果都往同一个信箱投信，信箱就会混乱；必须用街区号乘以街区长度再加上门牌号，才能得到全城唯一的地址。"
+  },
+  "beats": [
+    {
+      "beat_id": 1,
+      "title": "CPU循环变量i的全局唯一性",
+      "layout_zone": "top",
+      "visual_action": "在顶部区域，从左到右排列5个蓝色(#1f77b4)圆形，每个圆内写有白色数字0,1,2,3,4，表示循环变量i。一个红色(#d62728)箭头从第一个圆依次指向最后一个圆，表示i递增。",
+      "narration": "CPU循环变量i全局唯一。",
+      "pause_buffer": 1.0
+    },
+    {
+      "beat_id": 2,
+      "title": "单block内threadIdx.x唯一",
+      "layout_zone": "center",
+      "visual_action": "在中心区域，一个灰色(#7f7f7f)矩形框表示单个block，框内从左到右排列4个绿色(#2ca02c)圆形，每个圆内写有白色数字0,1,2,3，表示threadIdx.x。一个黄色(#ff7f0e)箭头在框内从左向右移动，依次指向每个圆。",
+      "narration": "单block内threadIdx.x唯一。",
+      "pause_buffer": 1.0
+    },
+    {
+      "beat_id": 3,
+      "title": "多block下threadIdx.x重复",
+      "layout_zone": "center",
+      "visual_action": "在中心区域，出现三个并排的灰色(#7f7f7f)矩形框，分别表示block 0、block 1、block 2。每个框内都有4个绿色(#2ca02c)圆形，数字均为0,1,2,3。三个框中的第一个圆同时闪烁红色(#d62728)，表示threadIdx.x=0在三个block中重复。",
+      "narration": "不同block的threadIdx.x相同。",
+      "pause_buffer": 1.5
+    },
+    {
+      "beat_id": 4,
+      "title": "冲突：同时写入同一内存位置",
+      "layout_zone": "bottom",
+      "visual_action": "在底部区域，一个灰色(#7f7f7f)矩形表示内存数组，位置0被高亮为红色(#d62728)。从中心区域三个block中threadIdx.x=0的绿色圆形分别发出红色(#d62728)箭头，全部指向底部内存位置0，箭头重叠并闪烁。",
+      "narration": "多个线程同时写同一位置。",
+      "pause_buffer": 2.0
+    },
+    {
+      "beat_id": 5,
+      "title": "物理隐喻：街区门牌号重复",
+      "layout_zone": "top",
+      "visual_action": "在顶部区域，三个并排的灰色(#7f7f7f)矩形表示街区，每个街区内有4个绿色(#2ca02c)小矩形表示门牌号1,2,3,4。三个街区的1号门牌同时闪烁红色(#d62728)，并发出红色箭头指向中心区域的一个红色(#d62728)信箱图标。",
+      "narration": "每个街区门牌号都从1开始。",
+      "pause_buffer": 1.5
+    },
+    {
+      "beat_id": 6,
+      "title": "全局线性索引公式",
+      "layout_zone": "center",
+      "visual_action": "在中心区域，显示白色文字公式：global_index = blockIdx.x * blockDim.x + threadIdx.x。公式下方，三个灰色(#7f7f7f)矩形框（block 0,1,2）中的绿色(#2ca02c)圆形依次被编号为0,1,2,3；4,5,6,7；8,9,10,11，数字变为黄色(#ff7f0e)并放大。",
+      "narration": "用blockIdx和blockDim计算全局索引。",
+      "pause_buffer": 2.0
+    },
+    {
+      "beat_id": 7,
+      "title": "正确索引：每个线程处理不同元素",
+      "layout_zone": "bottom",
+      "visual_action": "在底部区域，灰色(#7f7f7f)内存数组的每个位置0到11被不同颜色的圆形（蓝色#1f77b4、绿色#2ca02c、黄色#ff7f0e等）依次填充，每个圆形来自中心区域对应全局索引的线程，箭头一一对应且不重叠。",
+      "narration": "每个线程处理不同元素。",
+      "pause_buffer": 1.5
+    }
+  ]
+}

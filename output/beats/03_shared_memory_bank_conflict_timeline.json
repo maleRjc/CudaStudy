@@ -1,0 +1,310 @@
+{
+  "chunk_id": "03_shared_memory_bank_conflict",
+  "concept_id": "03_shared_memory_bank_conflict",
+  "title": "Shared Memory Architecture & Bank Conflicts",
+  "total_video_duration": 295.032,
+  "slides": [
+    {
+      "beat_id": 1,
+      "slide_id": 1,
+      "title": "Shared Memory: GPU的“高速便签”与Bank冲突陷阱",
+      "slide_type": "title_overview",
+      "key_points": [
+        "Shared Memory是GPU片上高速内存，用于线程块内通信和协作",
+        "其物理结构被划分为32个Bank，与Warp的32个线程对应",
+        "Bank冲突是性能隐形杀手，需理解其机制以避免"
+      ],
+      "layout_zone": "center",
+      "visual_spec": {
+        "layout": "header_and_bullets",
+        "code_badge": "无"
+      },
+      "visual_action": "",
+      "narration": "大家好，今天我们来深入探讨CUDA中的Shared Memory架构及其Bank冲突问题。Shared Memory是GPU片上的一块高速内存，所有线程块内的线程都可以访问它，常用于数据共享和减少全局内存访问。但是，它的物理结构被划分为32个独立的Bank，每个Bank的带宽有限。当同一个Warp中的多个线程访问同一个Bank的不同地址时，就会发生Bank冲突，导致访问被串行化，严重降低性能。理解Bank冲突的机制，是编写高性能CUDA程序的关键一步。本讲将揭示Bank冲突的根源，并给出避免冲突的最佳实践。",
+      "audio_file": "E:\\CudaStudy\\output\\audio\\03_shared_memory_bank_conflict_slide_1.mp3",
+      "audio_duration": 43.176,
+      "action_duration": 43.176,
+      "pause_buffer": 1.8,
+      "total_beat_duration": 44.976,
+      "start_time": 0.0,
+      "end_time": 44.976
+    },
+    {
+      "beat_id": 2,
+      "slide_id": 2,
+      "title": "CPU缓存 vs GPU Shared Memory：并行访问的认知冲突",
+      "slide_type": "code_misconception",
+      "key_points": [
+        "CPU缓存对并行访问是地址无关的，硬件自动处理冲突",
+        "GPU Shared Memory被显式划分为32个Bank，并行访问需避免Bank冲突",
+        "错误认知：认为Shared Memory像CPU缓存一样“自动高效”"
+      ],
+      "layout_zone": "center",
+      "visual_spec": {
+        "layout": "code_and_hardware_demo",
+        "code_badge": "无"
+      },
+      "visual_action": "",
+      "narration": "许多开发者习惯CPU的缓存模型：缓存对并行访问是地址无关的，硬件会自动处理冲突，程序员无需关心。但GPU的Shared Memory截然不同。它被显式划分为32个Bank，每个Bank每个时钟周期只能服务一个访问。如果同一个Warp中的线程访问不同Bank，可以并行；如果访问同一个Bank的不同地址，就会冲突，访问被串行化。这种设计是为了高带宽，但要求程序员精心安排数据布局。因此，不能简单将CPU缓存的思维套用到Shared Memory上，否则性能会大打折扣。",
+      "audio_file": "E:\\CudaStudy\\output\\audio\\03_shared_memory_bank_conflict_slide_2.mp3",
+      "audio_duration": 41.904,
+      "action_duration": 41.904,
+      "pause_buffer": 1.8,
+      "total_beat_duration": 43.704,
+      "start_time": 44.976,
+      "end_time": 88.68
+    },
+    {
+      "beat_id": 3,
+      "slide_id": 3,
+      "title": "Bank冲突的物理机制：32个Bank如何工作",
+      "slide_type": "manim_physics_demo",
+      "key_points": [
+        "Shared Memory被划分为32个Bank，每个Bank宽度为4字节",
+        "地址映射：连续字（4字节）依次映射到Bank 0~31，循环往复",
+        "Warp中的32个线程同时访问，若命中同一Bank的不同地址则冲突"
+      ],
+      "layout_zone": "center",
+      "visual_spec": {
+        "layout": "collision_animation",
+        "code_badge": "无"
+      },
+      "visual_action": "",
+      "narration": "让我们深入Shared Memory的物理结构。Shared Memory被划分为32个Bank，每个Bank的宽度通常是4字节。地址映射规则是：连续的字（4字节）依次映射到Bank 0到Bank 31，然后循环。例如，地址0在Bank 0，地址1在Bank 1，……地址31在Bank 31，地址32又回到Bank 0。当一个Warp的32个线程同时发起访问时，硬件会检查每个线程访问的地址落在哪个Bank。如果多个线程访问同一个Bank但地址不同，这些访问就必须串行执行，这就是Bank冲突。如果它们访问同一个地址，则会发生广播，不会冲突。理解这个映射规则是避免冲突的基础。",
+      "audio_file": "E:\\CudaStudy\\output\\audio\\03_shared_memory_bank_conflict_slide_3.mp3",
+      "audio_duration": 49.944,
+      "action_duration": 49.944,
+      "pause_buffer": 1.8,
+      "total_beat_duration": 51.744,
+      "start_time": 88.68,
+      "end_time": 140.424
+    },
+    {
+      "beat_id": 4,
+      "slide_id": 4,
+      "title": "代码示例：步长1无冲突 vs 步长2二路冲突",
+      "slide_type": "code_misconception",
+      "key_points": [
+        "步长1访问：线程i访问s_data[i]，每个线程命中不同Bank，无冲突",
+        "步长2访问：线程i访问s_data[2*i]，线程0和16都命中Bank 0，二路冲突",
+        "冲突导致访问串行化，性能下降为原来的1/2"
+      ],
+      "layout_zone": "center",
+      "visual_spec": {
+        "layout": "code_and_hardware_demo",
+        "code_badge": "float val = s_data[threadIdx.x];  // 无冲突\nfloat val2 = s_data[threadIdx.x * 2]; // 二路冲突"
+      },
+      "visual_action": "",
+      "narration": "来看两个代码示例。第一个：float val = s_data[threadIdx.x]; 这里线程i访问地址i，由于地址i映射到Bank i mod 32，而Warp中32个线程的threadIdx.x从0到31，正好每个线程访问不同的Bank，完全无冲突，这是最理想的访问模式。第二个：float val2 = s_data[threadIdx.x * 2]; 线程i访问地址2i。对于线程0，地址0在Bank 0；线程16，地址32也在Bank 0。因此线程0和16都访问Bank 0的不同地址，发生二路Bank冲突，这两个访问必须串行执行，导致该Warp的这次访问耗时加倍。如果冲突更严重，性能损失更大。",
+      "audio_file": "E:\\CudaStudy\\output\\audio\\03_shared_memory_bank_conflict_slide_4.mp3",
+      "audio_duration": 53.592,
+      "action_duration": 53.592,
+      "pause_buffer": 1.8,
+      "total_beat_duration": 55.392,
+      "start_time": 140.424,
+      "end_time": 195.816
+    },
+    {
+      "beat_id": 5,
+      "slide_id": 5,
+      "title": "量化冲突代价：从二路到三十二路",
+      "slide_type": "math_architecture_resolution",
+      "key_points": [
+        "N路冲突将访问延迟增加为N倍（假设无其他延迟）",
+        "最坏情况：32路冲突，性能下降为1/32",
+        "冲突程度取决于Warp内线程访问地址的Bank分布"
+      ],
+      "layout_zone": "center",
+      "visual_spec": {
+        "layout": "math_formula_and_resolved_grid",
+        "code_badge": "无"
+      },
+      "visual_action": "",
+      "narration": "Bank冲突的代价可以用冲突路数来量化。如果发生N路冲突，意味着同一个Bank有N个不同地址被访问，硬件需要N个周期来串行完成这些访问。因此，访问延迟变为原来的N倍。最坏情况是32路冲突，即所有32个线程都访问同一个Bank的不同地址，性能下降为原来的1/32。在实际应用中，常见的冲突有2路、4路、8路等。冲突程度取决于Warp内线程访问地址的Bank分布。我们可以通过公式计算：冲突路数等于同一个Bank中被访问的不同地址的最大数量。因此，优化目标就是让Warp内线程访问的地址均匀分布到32个Bank上。",
+      "audio_file": "E:\\CudaStudy\\output\\audio\\03_shared_memory_bank_conflict_slide_5.mp3",
+      "audio_duration": 48.384,
+      "action_duration": 48.384,
+      "pause_buffer": 1.8,
+      "total_beat_duration": 50.184,
+      "start_time": 195.816,
+      "end_time": 246.0
+    },
+    {
+      "beat_id": 6,
+      "slide_id": 6,
+      "title": "避免Bank冲突的最佳实践",
+      "slide_type": "summary_best_practice",
+      "key_points": [
+        "使用步长1访问连续数据，确保线程与Bank一一对应",
+        "调整数据布局：如填充（padding）改变步长，或使用结构体数组拆分",
+        "利用广播机制：多个线程访问同一地址不会冲突"
+      ],
+      "layout_zone": "center",
+      "visual_spec": {
+        "layout": "summary_and_checklist",
+        "code_badge": "无"
+      },
+      "visual_action": "",
+      "narration": "如何避免Bank冲突？首先，尽量使用步长1访问连续数据，这是最自然的无冲突模式。其次，如果必须使用其他步长，可以通过调整数据布局来避免冲突。例如，在数组末尾填充一个元素，改变行长度，使得列访问的步长变为奇数，从而分散到不同Bank。另外，将结构体数组拆分为多个数组（SoA）也可以避免冲突。最后，记住广播机制：如果多个线程访问同一个地址，硬件会广播数据，不会冲突。因此，在设计并行算法时，应仔细考虑Shared Memory的访问模式，确保每个Warp的访问均匀分布到32个Bank上。",
+      "audio_file": "E:\\CudaStudy\\output\\audio\\03_shared_memory_bank_conflict_slide_6.mp3",
+      "audio_duration": 47.232,
+      "action_duration": 47.232,
+      "pause_buffer": 1.8,
+      "total_beat_duration": 49.032,
+      "start_time": 246.0,
+      "end_time": 295.032
+    }
+  ],
+  "beats": [
+    {
+      "beat_id": 1,
+      "slide_id": 1,
+      "title": "Shared Memory: GPU的“高速便签”与Bank冲突陷阱",
+      "slide_type": "title_overview",
+      "key_points": [
+        "Shared Memory是GPU片上高速内存，用于线程块内通信和协作",
+        "其物理结构被划分为32个Bank，与Warp的32个线程对应",
+        "Bank冲突是性能隐形杀手，需理解其机制以避免"
+      ],
+      "layout_zone": "center",
+      "visual_spec": {
+        "layout": "header_and_bullets",
+        "code_badge": "无"
+      },
+      "visual_action": "",
+      "narration": "大家好，今天我们来深入探讨CUDA中的Shared Memory架构及其Bank冲突问题。Shared Memory是GPU片上的一块高速内存，所有线程块内的线程都可以访问它，常用于数据共享和减少全局内存访问。但是，它的物理结构被划分为32个独立的Bank，每个Bank的带宽有限。当同一个Warp中的多个线程访问同一个Bank的不同地址时，就会发生Bank冲突，导致访问被串行化，严重降低性能。理解Bank冲突的机制，是编写高性能CUDA程序的关键一步。本讲将揭示Bank冲突的根源，并给出避免冲突的最佳实践。",
+      "audio_file": "E:\\CudaStudy\\output\\audio\\03_shared_memory_bank_conflict_slide_1.mp3",
+      "audio_duration": 43.176,
+      "action_duration": 43.176,
+      "pause_buffer": 1.8,
+      "total_beat_duration": 44.976,
+      "start_time": 0.0,
+      "end_time": 44.976
+    },
+    {
+      "beat_id": 2,
+      "slide_id": 2,
+      "title": "CPU缓存 vs GPU Shared Memory：并行访问的认知冲突",
+      "slide_type": "code_misconception",
+      "key_points": [
+        "CPU缓存对并行访问是地址无关的，硬件自动处理冲突",
+        "GPU Shared Memory被显式划分为32个Bank，并行访问需避免Bank冲突",
+        "错误认知：认为Shared Memory像CPU缓存一样“自动高效”"
+      ],
+      "layout_zone": "center",
+      "visual_spec": {
+        "layout": "code_and_hardware_demo",
+        "code_badge": "无"
+      },
+      "visual_action": "",
+      "narration": "许多开发者习惯CPU的缓存模型：缓存对并行访问是地址无关的，硬件会自动处理冲突，程序员无需关心。但GPU的Shared Memory截然不同。它被显式划分为32个Bank，每个Bank每个时钟周期只能服务一个访问。如果同一个Warp中的线程访问不同Bank，可以并行；如果访问同一个Bank的不同地址，就会冲突，访问被串行化。这种设计是为了高带宽，但要求程序员精心安排数据布局。因此，不能简单将CPU缓存的思维套用到Shared Memory上，否则性能会大打折扣。",
+      "audio_file": "E:\\CudaStudy\\output\\audio\\03_shared_memory_bank_conflict_slide_2.mp3",
+      "audio_duration": 41.904,
+      "action_duration": 41.904,
+      "pause_buffer": 1.8,
+      "total_beat_duration": 43.704,
+      "start_time": 44.976,
+      "end_time": 88.68
+    },
+    {
+      "beat_id": 3,
+      "slide_id": 3,
+      "title": "Bank冲突的物理机制：32个Bank如何工作",
+      "slide_type": "manim_physics_demo",
+      "key_points": [
+        "Shared Memory被划分为32个Bank，每个Bank宽度为4字节",
+        "地址映射：连续字（4字节）依次映射到Bank 0~31，循环往复",
+        "Warp中的32个线程同时访问，若命中同一Bank的不同地址则冲突"
+      ],
+      "layout_zone": "center",
+      "visual_spec": {
+        "layout": "collision_animation",
+        "code_badge": "无"
+      },
+      "visual_action": "",
+      "narration": "让我们深入Shared Memory的物理结构。Shared Memory被划分为32个Bank，每个Bank的宽度通常是4字节。地址映射规则是：连续的字（4字节）依次映射到Bank 0到Bank 31，然后循环。例如，地址0在Bank 0，地址1在Bank 1，……地址31在Bank 31，地址32又回到Bank 0。当一个Warp的32个线程同时发起访问时，硬件会检查每个线程访问的地址落在哪个Bank。如果多个线程访问同一个Bank但地址不同，这些访问就必须串行执行，这就是Bank冲突。如果它们访问同一个地址，则会发生广播，不会冲突。理解这个映射规则是避免冲突的基础。",
+      "audio_file": "E:\\CudaStudy\\output\\audio\\03_shared_memory_bank_conflict_slide_3.mp3",
+      "audio_duration": 49.944,
+      "action_duration": 49.944,
+      "pause_buffer": 1.8,
+      "total_beat_duration": 51.744,
+      "start_time": 88.68,
+      "end_time": 140.424
+    },
+    {
+      "beat_id": 4,
+      "slide_id": 4,
+      "title": "代码示例：步长1无冲突 vs 步长2二路冲突",
+      "slide_type": "code_misconception",
+      "key_points": [
+        "步长1访问：线程i访问s_data[i]，每个线程命中不同Bank，无冲突",
+        "步长2访问：线程i访问s_data[2*i]，线程0和16都命中Bank 0，二路冲突",
+        "冲突导致访问串行化，性能下降为原来的1/2"
+      ],
+      "layout_zone": "center",
+      "visual_spec": {
+        "layout": "code_and_hardware_demo",
+        "code_badge": "float val = s_data[threadIdx.x];  // 无冲突\nfloat val2 = s_data[threadIdx.x * 2]; // 二路冲突"
+      },
+      "visual_action": "",
+      "narration": "来看两个代码示例。第一个：float val = s_data[threadIdx.x]; 这里线程i访问地址i，由于地址i映射到Bank i mod 32，而Warp中32个线程的threadIdx.x从0到31，正好每个线程访问不同的Bank，完全无冲突，这是最理想的访问模式。第二个：float val2 = s_data[threadIdx.x * 2]; 线程i访问地址2i。对于线程0，地址0在Bank 0；线程16，地址32也在Bank 0。因此线程0和16都访问Bank 0的不同地址，发生二路Bank冲突，这两个访问必须串行执行，导致该Warp的这次访问耗时加倍。如果冲突更严重，性能损失更大。",
+      "audio_file": "E:\\CudaStudy\\output\\audio\\03_shared_memory_bank_conflict_slide_4.mp3",
+      "audio_duration": 53.592,
+      "action_duration": 53.592,
+      "pause_buffer": 1.8,
+      "total_beat_duration": 55.392,
+      "start_time": 140.424,
+      "end_time": 195.816
+    },
+    {
+      "beat_id": 5,
+      "slide_id": 5,
+      "title": "量化冲突代价：从二路到三十二路",
+      "slide_type": "math_architecture_resolution",
+      "key_points": [
+        "N路冲突将访问延迟增加为N倍（假设无其他延迟）",
+        "最坏情况：32路冲突，性能下降为1/32",
+        "冲突程度取决于Warp内线程访问地址的Bank分布"
+      ],
+      "layout_zone": "center",
+      "visual_spec": {
+        "layout": "math_formula_and_resolved_grid",
+        "code_badge": "无"
+      },
+      "visual_action": "",
+      "narration": "Bank冲突的代价可以用冲突路数来量化。如果发生N路冲突，意味着同一个Bank有N个不同地址被访问，硬件需要N个周期来串行完成这些访问。因此，访问延迟变为原来的N倍。最坏情况是32路冲突，即所有32个线程都访问同一个Bank的不同地址，性能下降为原来的1/32。在实际应用中，常见的冲突有2路、4路、8路等。冲突程度取决于Warp内线程访问地址的Bank分布。我们可以通过公式计算：冲突路数等于同一个Bank中被访问的不同地址的最大数量。因此，优化目标就是让Warp内线程访问的地址均匀分布到32个Bank上。",
+      "audio_file": "E:\\CudaStudy\\output\\audio\\03_shared_memory_bank_conflict_slide_5.mp3",
+      "audio_duration": 48.384,
+      "action_duration": 48.384,
+      "pause_buffer": 1.8,
+      "total_beat_duration": 50.184,
+      "start_time": 195.816,
+      "end_time": 246.0
+    },
+    {
+      "beat_id": 6,
+      "slide_id": 6,
+      "title": "避免Bank冲突的最佳实践",
+      "slide_type": "summary_best_practice",
+      "key_points": [
+        "使用步长1访问连续数据，确保线程与Bank一一对应",
+        "调整数据布局：如填充（padding）改变步长，或使用结构体数组拆分",
+        "利用广播机制：多个线程访问同一地址不会冲突"
+      ],
+      "layout_zone": "center",
+      "visual_spec": {
+        "layout": "summary_and_checklist",
+        "code_badge": "无"
+      },
+      "visual_action": "",
+      "narration": "如何避免Bank冲突？首先，尽量使用步长1访问连续数据，这是最自然的无冲突模式。其次，如果必须使用其他步长，可以通过调整数据布局来避免冲突。例如，在数组末尾填充一个元素，改变行长度，使得列访问的步长变为奇数，从而分散到不同Bank。另外，将结构体数组拆分为多个数组（SoA）也可以避免冲突。最后，记住广播机制：如果多个线程访问同一个地址，硬件会广播数据，不会冲突。因此，在设计并行算法时，应仔细考虑Shared Memory的访问模式，确保每个Warp的访问均匀分布到32个Bank上。",
+      "audio_file": "E:\\CudaStudy\\output\\audio\\03_shared_memory_bank_conflict_slide_6.mp3",
+      "audio_duration": 47.232,
+      "action_duration": 47.232,
+      "pause_buffer": 1.8,
+      "total_beat_duration": 49.032,
+      "start_time": 246.0,
+      "end_time": 295.032
+    }
+  ]
+}

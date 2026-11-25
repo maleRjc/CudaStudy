@@ -1,0 +1,106 @@
+{
+  "sec_id": "sec_002_programming_model",
+  "topic": "Programming Model",
+  "curriculum_index": 1,
+  "page_range": "P20-P30",
+  "page_count": 11,
+  "target_duration_range": "4 ~ 6 分钟",
+  "slides": [
+    {
+      "slide_id": 1,
+      "title": "第 1 讲 · Programming Model：架构全景与背景",
+      "slide_type": "title_overview",
+      "key_points": [
+        "官方文档定位：Programming Model (第 20 - 30 页)",
+        "解决的核心工程问题：打破串行思维，释放 GPU 硬件原生算力",
+        "本章技术深度：涵盖 11 页原文章节的深度解析与实操范式"
+      ],
+      "narration_script": "欢迎来到 GPU 高性能计算与 CUDA 架构精讲。今天我们聚焦官方文档第 20 页至第 30 页的核心章节：Programming Model。在 GPU 异构计算的宏大世界里，这一章节具有承前启后的关键战略意义。原文指出：本章全面讲解《CUDA 编程指南》中的核心内容：Programming Model。。很多初学者在阅读这部分文档时，往往因为缺少物理空间直觉而感到晦涩难懂。在接下来的课程中，我们将把冰冷的规格文本，转化为生动直观的空间图式，帮助大家真正吃透底层的每一个运行细节。",
+      "visual_spec": {
+        "layout": "header_and_bullets",
+        "code_badge": "// CUDA Guide: Programming Model",
+        "theme_accent": "title"
+      }
+    },
+    {
+      "slide_id": 2,
+      "title": "核心机理剖析：概念体系与硬件运行规范",
+      "slide_type": "concept_breakdown",
+      "key_points": [
+        "核心抽象对象：流式多处理器 (SM)、线程束调度与层级映射",
+        "硬件工作约定：内存总线宽度与时钟周期的物理制约",
+        "关键规范推演：如何严格遵循 NVIDIA 硬件微架构最佳实践"
+      ],
+      "narration_script": "深入到第二小节，我们来梳理文档中涉及的核心概念体系。官方文档在此处着重强调了硬件的执行契约。正如文档所述：本节深入剖析该模块的关键概念体系与运行规范。...从微架构的角度来看，GPU 绝不是 CPU 核心数量的简单堆叠，而是采用了一种全新的吞吐优先架构。每一个线程、每一个数据块的调度，都必须符合硬件的对齐规则。理解了这些基本术语和物理约束，后续编写核函数时才不会处处碰壁。",
+      "visual_spec": {
+        "layout": "code_and_hardware_demo",
+        "code_badge": "cudaError_t err = cudaSuccess;",
+        "theme_accent": "concept"
+      }
+    },
+    {
+      "slide_id": 3,
+      "title": "认知盲区与避坑指南：开发者最常犯的直觉错误",
+      "slide_type": "code_misconception",
+      "key_points": [
+        "典型串行思维陷阱：习惯性假设操作具备顺序可见性与原子性",
+        "隐藏 Bug 爆发点：高并发场景下的数据竞态与硬件资源死锁",
+        "性能暗礁：未对齐访问引发的总线利用率骤降"
+      ],
+      "narration_script": "在实际工程落地中，开发者最容易在这里栽跟头。当我们把 CPU 上的串行逻辑直接照搬到 GPU 时，很多直觉假设会瞬间崩塌。例如文档中提醒我们注意的现象：本章全面讲解《CUDA 编程指南》中的核心内容：Programming Model。。如果忽视了这一点，你的程序可能在小规模数据测试时看似毫无破绽，但一旦上生产环境、遭遇超大规模网格并发时，就会出现随机的数据被覆盖、或者整个内核神秘挂死的诡异问题。只有彻底看清这种认知断层，我们才能写出真正稳健的代码。",
+      "visual_spec": {
+        "layout": "code_and_hardware_demo",
+        "code_badge": "// 隐蔽并发 Bug 范例",
+        "theme_accent": "warning"
+      }
+    },
+    {
+      "slide_id": 4,
+      "title": "物理微架构动态推演：芯片底层的空间博弈",
+      "slide_type": "manim_physics_demo",
+      "key_points": [
+        "空间几何映射：线程在 SM 内部的高速脉冲推进",
+        "硬件仲裁过程：总线事务的合并、排队与掩码锁定",
+        "顿悟时刻：通过动态可视化透视黑盒硬件的真实运转"
+      ],
+      "narration_script": "现在，我们进入本讲最震撼的动态推演环节。为了让大家彻底搞明白底层发生了什么，我们借助 3Blue1Brown 风格的 Manim 数学几何引擎，将芯片内部的物理微架构直接投射在屏幕上。请大家屏住呼吸，紧盯屏幕中央的线程点阵与显存通道：每一个色块代表一个硬件资源，光束的每一次交汇与闪烁，都在真实还原纳秒级时钟周期内发生的总线仲裁。通过空间维度的直观展开，抽象的文档规则瞬间变成了看得见、摸得着的物理规律。",
+      "visual_spec": {
+        "layout": "collision_animation",
+        "code_badge": "int idx = blockIdx.x * blockDim.x + threadIdx.x;",
+        "theme_accent": "manim"
+      }
+    },
+    {
+      "slide_id": 5,
+      "title": "工程范式与生产级代码实现",
+      "slide_type": "math_architecture_resolution",
+      "key_points": [
+        "NVIDIA 官方标准模式：结构清晰、健壮可靠的核函数写法",
+        "算力与吞吐优化：最大化利用寄存器与各级存储层次",
+        "边界与异常防线：兼顾绝对精度与极限吞吐"
+      ],
+      "narration_script": "看清了底层的物理真相之后，我们来看 NVIDIA 官方推荐的标准解法。屏幕上呈现的是符合工业级性能规范的代码实现。我们通过巧妙的索引折算、规约合并与同步设计，彻底消除了前面提到的冲突隐患，让数万个线程像一条顺畅的高速公路一样并排行驶。在日常开发中，直接复用这种经过千锤百炼的标准范式，能够为你节省大量调试和重构的宝贵时间。",
+      "visual_spec": {
+        "layout": "math_formula_and_resolved_grid",
+        "code_badge": "__global__ void kernel() { ... }",
+        "theme_accent": "code"
+      }
+    },
+    {
+      "slide_id": 6,
+      "title": "本讲总结与心智清单 · Programming Model",
+      "slide_type": "summary_best_practice",
+      "key_points": [
+        "一句话核心结论：牢记 Programming Model 的底层本质与空间图式",
+        "架构避坑三步走：检查边界、检查对齐、检查并发同步",
+        "知识脉络延伸：为后续章节的进阶优化打下坚实基石"
+      ],
+      "narration_script": "最后，我们来对本节所学进行全景沉淀。通过这一小节的学习，相信大家对《CUDA 编程指南》中的 Programming Model 已经有了脱胎换骨的全新认识。高性能计算绝不是碰运气，每一个时钟周期的节省，都来自于我们对底层物理事实的透彻洞察。请把今天总结的三条检查清单印在脑海中。在接下来的章节里，我们将带着这份清晰的空间心智，继续征服更深邃的 GPU 架构高地。",
+      "visual_spec": {
+        "layout": "summary_and_checklist",
+        "code_badge": "// 工业级 CUDA 核心工程心法",
+        "theme_accent": "summary"
+      }
+    }
+  ]
+}

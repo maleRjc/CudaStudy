@@ -1,0 +1,15 @@
+{
+  "chunk_id": "06_syncthreads_barrier",
+  "title": "块内线程同步屏障与死锁禁忌 (__syncthreads & Barrier Safety)",
+  "section_ref": "Section 3.2.1: Thread Block Synchronization",
+  "keywords": [
+    "__syncthreads",
+    "barrier",
+    "deadlock",
+    "RAW hazard",
+    "shared memory"
+  ],
+  "cognitive_focus": "以为线程会在写入共享内存后自动等待彼此。没有显式屏障时，快线程立即读取慢线程未写完的脏数据(RAW 数据冲突)。更致命的是：若将 __syncthreads 放置在条件分支中，将导致未走该分支的线程永不到达屏障，引发硬件级永久死锁挂起！",
+  "minimal_code": "// 读写脏数据风险修复 (必须统一到达屏障):\ns_data[tid] = g_in[tid];\n__syncthreads(); // 集合所有人，确保写完毕\nfloat v = s_data[tid ^ 1];\n\n// 致命死锁禁忌 (条件分支内屏障，导致硬件挂死):\nif (tid % 2 == 0) {\n    __syncthreads(); // 只有一半人到达，永远死锁挂起!\n}",
+  "pdf_context_snippet": "--- Page 48 ---\nCUDA Programming Guide, Release 13.3\nproceed. Shared Memory gives an example of using shared memory.\nFor efficient cooperation, shared memory is expected to be a low-latency memory near each processor\ncore (much like an L1 cache) and __syncthreads() is expected to be lightweight. __syncthreads()\nonly synchronizes the threads within a single thread block.\nSynchronization between blocks is only supported in certain circumstances. For example, thread block\nclusters allow blocks within a cluster to synchronize, and the cooperative Groups APIs provide mecha-\nnisms to create cross-block synchronization domains.\nBest performance is usually achieved when synchronization is kept within a thread block. Thread\nblocks can still work on common results using atomic memory functions, which will be covered in com-\ning sections.\nSection Section 3.2.4 covers CUDA synchronization primitives that provide very fine-grained control\nfor maximizing performance and resource utilization.\n2.1.6. Runtime Initialization\nThe CUDA runtime creates a CUDA context for each device in the system. This context is the primary\ncontext for this device and is initialized at the first runtime function which requires an active context\non this device. The context is shared among all the host threads of the application. As part of context\ncreation, the device code is just-in-time compiled if necessary and loaded into device memory. This all\nhappens transparently. The primary context created by the CUDA r"
+}

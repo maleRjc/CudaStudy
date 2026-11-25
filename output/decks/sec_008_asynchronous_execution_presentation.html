@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>Asynchronous Execution - PPT讲解文档</title>
+    <style>
+        body {
+            margin: 0;
+            background-color: #0D1117;
+            color: #E6EDF3;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 30px 20px;
+        }
+        .deck-container {
+            max-width: 960px;
+            width: 100%;
+        }
+        .deck-title {
+            text-align: center;
+            border-bottom: 2px solid #30363D;
+            padding-bottom: 20px;
+            margin-bottom: 30px;
+        }
+        .deck-title h1 {
+            color: #76B900;
+            margin: 0 0 10px 0;
+        }
+        .slide {
+            background: #161B22;
+            border: 1px solid #30363D;
+            border-radius: 12px;
+            padding: 24px 30px;
+            margin-bottom: 28px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+        }
+        .slide-badge {
+            display: inline-block;
+            background: rgba(118, 185, 0, 0.15);
+            color: #76B900;
+            padding: 3px 10px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: bold;
+            margin-bottom: 8px;
+        }
+        h2 {
+            color: #58A6FF;
+            margin: 4px 0 16px 0;
+        }
+        h3 {
+            color: #8B949E;
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+        }
+        .code-block {
+            background: #090D13;
+            border: 1px solid #30363D;
+            border-radius: 8px;
+            padding: 12px 16px;
+            font-family: Consolas, Monaco, monospace;
+            color: #7EE787;
+            margin-bottom: 18px;
+        }
+        .slide-body {
+            display: grid;
+            grid-template-columns: 1fr 1.2fr;
+            gap: 20px;
+        }
+        ul {
+            margin: 0;
+            padding-left: 20px;
+            color: #C9D1D9;
+            line-height: 1.6;
+        }
+        .narration-section {
+            background: #1F242C;
+            border-left: 4px solid #76B900;
+            border-radius: 4px 8px 8px 4px;
+            padding: 12px 18px;
+        }
+        .narration-section p {
+            margin: 0;
+            color: #E6EDF3;
+            line-height: 1.7;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="deck-container">
+        <div class="deck-title">
+            <h1>Asynchronous Execution</h1>
+            <p style="color: #8B949E; margin: 0;">《CUDA C++ Programming Guide》自动提取 PPT 讲解文档</p>
+        </div>
+        
+        <div class="slide" id="slide-1">
+            <div class="slide-header">
+                <span class="slide-badge">Slide 1 / 8 · title_overview</span>
+                <h2>异步执行：并发重叠的艺术</h2>
+            </div>
+            <div class='code-block'><code>cudaMemcpyAsync, kernel<<<>>></code></div>
+            <div class="slide-body">
+                <div class="bullets-section">
+                    <h3>📌 核心概念板书</h3>
+                    <ul><li><strong>CUDA 支持主机与设备、内存传输与计算之间的并发执行</strong></li><li><strong>异步接口：调用立即返回，操作在后台进行</strong></li><li><strong>同步方式：阻塞、轮询、回调</strong></li><li><strong>典型应用：重叠主机-设备内存传输与计算，隐藏开销</strong></li></ul>
+                </div>
+                <div class="narration-section">
+                    <h3>🎙️ 讲师详细口播讲稿</h3>
+                    <p>大家好，欢迎来到异步执行这一节。想象一下，你是一位餐厅主厨，同时要煮汤、切菜和烤面包。如果你按顺序一件件做，顾客会等很久；但如果你能同时进行，效率就高多了。CUDA 的异步执行就是让 GPU 和 CPU 像这样并行工作。具体来说，CUDA 允许五种并发：主机计算、设备计算、主机到设备的内存传输、设备到主机的内存传输、设备内部的内存传输，甚至设备之间的传输。这些操作通过异步接口发起，比如内核启动或内存拷贝函数会立即返回，不等待操作完成。这样你的程序就可以继续做其他事情。当需要结果时，再通过阻塞、轮询或回调来同步。最典型的场景就是把内存传输和计算重叠起来，从而隐藏传输开销。这就是异步执行的核心思想。</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="slide" id="slide-2">
+            <div class="slide-header">
+                <span class="slide-badge">Slide 2 / 8 · concept_breakdown</span>
+                <h2>异步并发的五大操作类型</h2>
+            </div>
+            <div class='code-block'><code>H2D, D2H, D2D, P2P</code></div>
+            <div class="slide-body">
+                <div class="bullets-section">
+                    <h3>📌 核心概念板书</h3>
+                    <ul><li><strong>主机计算：CPU 执行代码</strong></li><li><strong>设备计算：GPU 执行内核</strong></li><li><strong>主机到设备传输：H2D</strong></li><li><strong>设备到主机传输：D2H</strong></li><li><strong>设备内传输：D2D</strong></li><li><strong>设备间传输：P2P（如果支持）</strong></li></ul>
+                </div>
+                <div class="narration-section">
+                    <h3>🎙️ 讲师详细口播讲稿</h3>
+                    <p>让我们详细看看这五种可以并发的操作。首先是主机计算，也就是 CPU 执行你的 C++ 代码，比如准备数据、控制逻辑。第二是设备计算，即 GPU 上运行的内核函数。第三是主机到设备的内存传输，通常是把数据从 CPU 内存拷贝到 GPU 显存。第四是设备到主机的传输，把结果从 GPU 拷回 CPU。第五是设备内部的内存传输，比如在显存内复制数据。此外，如果有多块 GPU，还可以进行设备间的传输。这些操作都可以通过异步接口发起，从而相互重叠。比如，你可以在 GPU 计算的同时，把下一批数据从主机传到设备，或者把上一批结果传回主机。这种重叠能极大提升整体吞吐量。但要注意，并非所有硬件都支持所有类型的并发，具体取决于 CUDA 版本和计算能力。</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="slide" id="slide-3">
+            <div class="slide-header">
+                <span class="slide-badge">Slide 3 / 8 · concept_breakdown</span>
+                <h2>异步接口：调用即返回</h2>
+            </div>
+            <div class='code-block'><code>cudaMemcpyAsync(dst, src, size, cudaMemcpyHostToDevice, stream);</code></div>
+            <div class="slide-body">
+                <div class="bullets-section">
+                    <h3>📌 核心概念板书</h3>
+                    <ul><li><strong>异步调用立即返回，不等待操作完成</strong></li><li><strong>可能返回时操作还未开始</strong></li><li><strong>应用程序可同时执行其他任务</strong></li><li><strong>需要结果时必须同步</strong></li><li><strong>典型模式：重叠传输与计算</strong></li></ul>
+                </div>
+                <div class="narration-section">
+                    <h3>🎙️ 讲师详细口播讲稿</h3>
+                    <p>异步接口的关键在于“调用即返回”。当你调用一个异步函数，比如 cudaMemcpyAsync 或启动一个内核，函数会立刻返回，而实际的操作可能在后台排队，甚至还没开始。这就像你点了外卖，下单后立刻挂断电话，外卖小哥什么时候出发你并不知道，但你可以继续做自己的事。在程序中，这意味着你可以同时做其他工作，比如准备下一批数据或处理其他任务。但是，当你需要使用这些操作的结果时，必须进行同步，确保操作已经完成。最常见的例子就是重叠内存传输和计算：在 GPU 计算当前数据块时，异步地把下一块数据从主机传到设备，这样当计算完成时，数据已经就绪，从而隐藏了传输时间。这种模式能显著提升程序性能。</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="slide" id="slide-4">
+            <div class="slide-header">
+                <span class="slide-badge">Slide 4 / 8 · concept_breakdown</span>
+                <h2>同步的三种方式：阻塞、轮询、回调</h2>
+            </div>
+            <div class='code-block'><code>cudaStreamSynchronize, cudaStreamQuery, cudaLaunchHostFunc</code></div>
+            <div class="slide-body">
+                <div class="bullets-section">
+                    <h3>📌 核心概念板书</h3>
+                    <ul><li><strong>阻塞：调用函数等待操作完成</strong></li><li><strong>轮询：非阻塞检查状态</strong></li><li><strong>回调：操作完成时自动执行预注册函数</strong></li><li><strong>根据场景选择合适的同步方式</strong></li></ul>
+                </div>
+                <div class="narration-section">
+                    <h3>🎙️ 讲师详细口播讲稿</h3>
+                    <p>异步操作发起后，我们总得知道它什么时候完成。CUDA 提供了三种同步方式。第一种是阻塞式，比如 cudaStreamSynchronize，调用后线程会一直等待，直到流中的所有操作完成。这就像你在餐厅等位，一直站着直到有空桌。第二种是轮询式，比如 cudaStreamQuery，它立即返回一个状态，告诉你操作是否完成，你可以反复检查。这就像你每隔几分钟去问服务员有没有空位。第三种是回调式，你可以注册一个函数，当操作完成时自动调用。这就像你留下电话号码，有空位时餐厅打电话通知你。每种方式各有适用场景：阻塞简单但可能浪费 CPU；轮询灵活但可能忙等；回调高效但需要小心线程安全。理解这些有助于你编写高效的异步程序。</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="slide" id="slide-5">
+            <div class="slide-header">
+                <span class="slide-badge">Slide 5 / 8 · concept_breakdown</span>
+                <h2>硬件支持与计算能力</h2>
+            </div>
+            <div class='code-block'><code>cudaGetDeviceProperties(&prop, dev); prop.concurrentKernels;</code></div>
+            <div class="slide-body">
+                <div class="bullets-section">
+                    <h3>📌 核心概念板书</h3>
+                    <ul><li><strong>并发能力取决于 CUDA 版本和计算能力</strong></li><li><strong>不同 GPU 架构支持不同的并发特性</strong></li><li><strong>需要查询设备属性以确定支持情况</strong></li><li><strong>编程时需考虑兼容性</strong></li></ul>
+                </div>
+                <div class="narration-section">
+                    <h3>🎙️ 讲师详细口播讲稿</h3>
+                    <p>虽然 CUDA 提供了异步编程接口，但实际能实现多少并发，取决于你的硬件和软件环境。不同的 CUDA 版本和 GPU 计算能力（Compute Capability）支持的特性不同。比如，有些老显卡可能不支持并发内核执行，或者设备间的点对点传输需要特定型号。因此，在编写异步程序时，你需要查询设备属性，比如通过 cudaGetDeviceProperties 查看 concurrentKernels、asyncEngineCount 等字段，了解你的 GPU 支持哪些并发能力。此外，驱动程序版本也会影响。为了写出可移植的代码，最好在运行时检测这些特性，并做好回退方案。记住，异步编程不是银弹，需要结合具体硬件来优化。</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="slide" id="slide-6">
+            <div class="slide-header">
+                <span class="slide-badge">Slide 6 / 8 · manim_physics_demo</span>
+                <h2>异步执行的心智模型：流水线并行</h2>
+            </div>
+            <div class='code-block'><code>cudaStreamCreate(&stream1); cudaStreamCreate(&stream2);</code></div>
+            <div class="slide-body">
+                <div class="bullets-section">
+                    <h3>📌 核心概念板书</h3>
+                    <ul><li><strong>将任务视为流水线阶段</strong></li><li><strong>重叠传输与计算以隐藏延迟</strong></li><li><strong>使用多个流实现任务级并行</strong></li><li><strong>可视化时间线：传输与计算交错</strong></li></ul>
+                </div>
+                <div class="narration-section">
+                    <h3>🎙️ 讲师详细口播讲稿</h3>
+                    <p>为了真正理解异步执行，我们建立一个心智模型：流水线。想象一个工厂装配线，有多个工作站。在 CUDA 中，流（Stream）就像一条装配线，操作按顺序执行，但不同流之间可以并发。你可以把内存传输和计算放在不同的流中，让它们重叠。比如，流1进行数据传输，流2同时进行计算。通过时间线图，你能看到传输和计算如何交错进行，从而最大化硬件利用率。这个模型帮助我们设计程序：将大任务分解为小块，使用多个流形成流水线，让数据搬运和计算重叠。但要注意，流之间需要同步时（如数据依赖），必须插入事件或同步点。掌握这个模型，你就能像指挥交响乐一样调度 GPU 资源。</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="slide" id="slide-7">
+            <div class="slide-header">
+                <span class="slide-badge">Slide 7 / 8 · code_misconception</span>
+                <h2>代码示例：重叠传输与计算</h2>
+            </div>
+            <div class='code-block'><code>for (int i = 0; i < n; i++) { cudaMemcpyAsync(..., stream[i]); kernel<<<..., stream[i]>>>(...); }</code></div>
+            <div class="slide-body">
+                <div class="bullets-section">
+                    <h3>📌 核心概念板书</h3>
+                    <ul><li><strong>使用多个流实现重叠</strong></li><li><strong>常见错误：默认流导致串行化</strong></li><li><strong>正确使用 cudaMemcpyAsync 和内核启动</strong></li><li><strong>使用事件进行流间同步</strong></li></ul>
+                </div>
+                <div class="narration-section">
+                    <h3>🎙️ 讲师详细口播讲稿</h3>
+                    <p>让我们看一个实际例子。假设我们要处理大量数据，分成多个块。错误做法是在默认流中依次进行传输和计算，这样无法重叠。正确做法是创建多个流，对每个数据块，在一个流中异步传输数据，然后在同一个流中启动内核计算。由于不同流可以并发，当流1在计算时，流2可以传输下一块数据。但要注意，如果使用默认流，它可能会与其它流同步，导致串行化。所以最好使用非默认流。另外，如果计算需要等待传输完成，同一流中的操作天然有序，无需额外同步。但如果流之间有依赖，比如流2的计算需要流1的结果，就必须使用事件（cudaEvent）进行同步。掌握这些细节，才能写出高效的异步代码。</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="slide" id="slide-8">
+            <div class="slide-header">
+                <span class="slide-badge">Slide 8 / 8 · summary_best_practice</span>
+                <h2>最佳实践与总结</h2>
+            </div>
+            <div class='code-block'><code>cudaStreamNonBlocking, cudaEventRecord, cudaStreamWaitEvent</code></div>
+            <div class="slide-body">
+                <div class="bullets-section">
+                    <h3>📌 核心概念板书</h3>
+                    <ul><li><strong>使用异步接口隐藏传输延迟</strong></li><li><strong>多流实现任务级并行</strong></li><li><strong>合理选择同步方式</strong></li><li><strong>检查硬件支持，编写可移植代码</strong></li><li><strong>避免默认流的隐式同步</strong></li></ul>
+                </div>
+                <div class="narration-section">
+                    <h3>🎙️ 讲师详细口播讲稿</h3>
+                    <p>最后，我们总结一下异步执行的最佳实践。首先，尽量使用异步接口，如 cudaMemcpyAsync 和内核启动，以便重叠操作。其次，利用多个流实现任务级并行，将数据分块，形成流水线。第三，根据需求选择同步方式：阻塞、轮询或回调。第四，在运行时检查设备属性，确保你的代码能适应不同硬件。第五，警惕默认流的隐式同步行为，它可能导致性能下降，建议使用非默认流或 per-thread 默认流。异步执行是 CUDA 性能优化的核心，掌握它能让你的程序飞起来。希望这些内容对你有所帮助，谢谢大家！</p>
+                </div>
+            </div>
+        </div>
+        
+    </div>
+</body>
+</html>

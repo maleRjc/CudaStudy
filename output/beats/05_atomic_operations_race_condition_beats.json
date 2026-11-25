@@ -1,0 +1,36 @@
+{
+  "chunk_id": "05_atomic_operations_race_condition",
+  "title": "原子操作与读写竞争防护 (Atomic Operations & Race Condition)",
+  "conflict": {
+    "misconception": "以为代码写了 sum += 1，十万个 GPU 线程跑完后结果就一定是十万。",
+    "reality": "自增运算在底层由 Read-Modify-Write 三步组成。高并发下多个线程同时读到旧值，计算后互相覆写，绝大多数增量无声丢失，必须由 atomicAdd 硬件排队互斥锁保护。",
+    "why_confusing": "单线程或极少线程测试时结果正确，一旦大规模并发，统计数字随机丢失 80% 以上。",
+    "physical_metaphor": "多名裁判同时看了一眼记分牌上的 0，各自在草稿纸上加 1 后同时写上去，记分牌最终只显示 1。"
+  },
+  "beats": [
+    {
+      "beat_id": 1,
+      "title": "并发写冲突：不可控的旧值覆写",
+      "layout_zone": "center",
+      "visual_action": "中央显示计数器 [0]。两个线程 t0 与 t1 同时读取数字 0，各自在其本地缓存中计算得出 1，随后同时覆写中央计数器，最终计数器仅显示 1，产生惊叹号警告。",
+      "narration": "并发读改写不是原子事务，海量更新在覆写中瞬间蒸发。",
+      "pause_buffer": 0.6
+    },
+    {
+      "beat_id": 2,
+      "title": "原子操作：硬件级排队独占锁",
+      "layout_zone": "center",
+      "visual_action": "顶部代码变为 'atomicAdd(&counter, 1)'。中央计数器外围浮现金色硬件盾牌，t0 优先进入使计数器变为 1；随后 t1 依序进入变为 2，所有更新无一遗漏。",
+      "narration": "呼叫原子指令，硬件为每个线程拉起安全互斥锁。",
+      "pause_buffer": 0.8
+    },
+    {
+      "beat_id": 3,
+      "title": "顿悟：安全与吞吐的辩证平衡",
+      "layout_zone": "bottom",
+      "visual_action": "展示分块局部规约(Warp Shuffle/Shared Memory)再全局 Atomic 的两级架构，计数器飞速跃升至 100000 满额。",
+      "narration": "先局部合并再原子累加，安全与极速兼得。",
+      "pause_buffer": 2.2
+    }
+  ]
+}
