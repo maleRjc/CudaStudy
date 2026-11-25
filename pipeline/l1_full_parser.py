@@ -118,7 +118,10 @@ class FullBookPdfParser:
         return sections
 
     def extract_section_text_and_code(self, section: Dict[str, Any]) -> Dict[str, Any]:
-        """Extracts complete text and isolates code blocks from a specific section's page range."""
+        """
+        Extracts complete text, formulas, and isolates code blocks from a specific section's page range.
+        Includes two-column line de-hyphenation, header/footer noise removal, and formula detection.
+        """
         start_p = section["start_page"] - 1
         end_p = section["end_page"]
 
@@ -129,18 +132,34 @@ class FullBookPdfParser:
 
         pages_text = []
         for p_idx in range(start_p, end_p):
-            t = reader.pages[p_idx].extract_text() or ""
-            pages_text.append(f"--- Page {p_idx + 1} ---\n" + t)
+            raw_t = reader.pages[p_idx].extract_text() or ""
+            # De-hyphenate words broken across lines (e.g. synchro-\nnization -> synchronization)
+            cleaned_t = re.sub(r'(\w+)-\n(\w+)', r'\1\2', raw_t)
+            # Filter repeated header/footer lines
+            cleaned_t = re.sub(r'CUDA C\+\+ Programming Guide.*?\n', '', cleaned_t)
+            cleaned_t = re.sub(r'PG-\d+-\d+_v\d+\.\d+\s*\|\s*\d+', '', cleaned_t)
+            pages_text.append(f"--- Page {p_idx + 1} ---\n" + cleaned_t)
 
         full_text = "\n".join(pages_text)
 
-        # Extract code lines heuristic (lines with C++/CUDA keywords or indentation)
+        # Extract code blocks heuristic (lines with C++/CUDA keywords or syntax)
         code_snippets = []
+        formulas = []
+
         for block in re.split(r"\n\s*\n", full_text):
-            if any(k in block for k in ["__global__", "__device__", "__shared__", "cudaMalloc", "cudaMemcpy", "threadIdx", "blockIdx", "void ", "int ", "float ", "for (", "if ("]):
-                clean_b = block.strip()
-                if len(clean_b) > 20 and len(clean_b) < 1500:
+            clean_b = block.strip()
+            # Detect CUDA code snippets
+            if any(k in clean_b for k in [
+                "__global__", "__device__", "__shared__", "cudaMalloc",
+                "cudaMemcpy", "threadIdx", "blockIdx", "blockDim", "gridDim",
+                "<<<", ">>>", "__syncthreads", "atomicAdd"
+            ]):
+                if 20 < len(clean_b) < 1800:
                     code_snippets.append(clean_b)
+            # Detect mathematical and indexing formulas
+            elif any(k in clean_b for k in [" * ", " + ", " / ", " % ", " = ", "sum_", "log2", "2^", "<="]) and len(clean_b) < 200:
+                if any(k in clean_b.lower() for k in ["index", "thread", "block", "offset", "stride", "bank", "warp"]):
+                    formulas.append(clean_b)
 
         return {
             "sec_id": section["sec_id"],
@@ -150,8 +169,10 @@ class FullBookPdfParser:
             "page_count": section["page_count"],
             "full_text": full_text,
             "text_length": len(full_text),
-            "code_snippets": code_snippets[:5]  # Top representative code snippets
+            "code_snippets": code_snippets[:6],  # Top representative code snippets
+            "formulas": formulas[:5]             # Detected key indexing/math formulas
         }
+
 
 
 if __name__ == "__main__":

@@ -181,7 +181,7 @@ class CudaStudioApp(ctk.CTk):
         self.voice_combo.pack(fill="x", padx=15, pady=(2, 15))
 
         # 4. Manim Video Quality
-        sec4_lbl = ctk.CTkLabel(left_panel, text="🎬 动画渲染画质", font=ctk.CTkFont(family="Microsoft YaHei", size=15, weight="bold"), text_color="#FFFFFF")
+        sec4_lbl = ctk.CTkLabel(left_panel, text="🎬 动画渲染画质与执行策略", font=ctk.CTkFont(family="Microsoft YaHei", size=15, weight="bold"), text_color="#FFFFFF")
         sec4_lbl.pack(anchor="w", padx=15, pady=(10, 8))
 
         self.quality_seg = ctk.CTkSegmentedButton(
@@ -192,9 +192,20 @@ class CudaStudioApp(ctk.CTk):
             height=34
         )
         self.quality_seg.set("480P 预览 (-ql)")
-        self.quality_seg.pack(fill="x", padx=15, pady=(2, 20))
+        self.quality_seg.pack(fill="x", padx=15, pady=(2, 10))
 
-        # 5. Big Action Button
+        # Checkpoint Resume Toggle
+        self.resume_var = ctk.BooleanVar(value=True)
+        self.resume_check = ctk.CTkCheckBox(
+            left_panel,
+            text="启用断点续跑 (跳过已渲染视频与分镜)",
+            variable=self.resume_var,
+            font=ctk.CTkFont(size=12),
+            text_color="#E0E6ED"
+        )
+        self.resume_check.pack(anchor="w", padx=15, pady=(2, 12))
+
+        # 5. Action Buttons (Run Pipeline + Env Check)
         self.btn_run = ctk.CTkButton(
             left_panel,
             text="🚀 一键生成 PPT 讲稿与精讲视频",
@@ -205,7 +216,20 @@ class CudaStudioApp(ctk.CTk):
             corner_radius=8,
             command=self._start_pipeline
         )
-        self.btn_run.pack(fill="x", padx=15, pady=(5, 15))
+        self.btn_run.pack(fill="x", padx=15, pady=(5, 8))
+
+        self.btn_check_env = ctk.CTkButton(
+            left_panel,
+            text="🔍 运行系统依赖体检 (FFmpeg / Manim / TTS)",
+            font=ctk.CTkFont(family="Microsoft YaHei", size=12),
+            fg_color="#2A2F3A",
+            hover_color="#3A404F",
+            height=32,
+            corner_radius=6,
+            command=self._run_env_check
+        )
+        self.btn_check_env.pack(fill="x", padx=15, pady=(2, 15))
+
 
         # ----------------- RIGHT MONITOR & OUTPUT PANEL -----------------
         right_panel = ctk.CTkFrame(container, fg_color=COLOR_CARD_BG, corner_radius=12)
@@ -378,6 +402,32 @@ class CudaStudioApp(ctk.CTk):
             pass
         self.after(80, self._poll_log_queue)
 
+    def _run_env_check(self):
+        self.log_textbox.delete("1.0", "end")
+        self._log("===========================================================================")
+        self._log("🚀 正在运行系统与依赖自检 (FFmpeg / Manim / Edge-TTS / DeepSeek)...")
+        self._log("===========================================================================")
+        checks = check_env.run_all_checks()
+        all_pass = True
+        status_icons = {
+            "PASS": "✅ [通过]",
+            "WARN": "⚠️ [注意]",
+            "FAIL": "❌ [缺失]",
+            "INFO": "💡 [提示]"
+        }
+        for c in checks:
+            icon = status_icons.get(c["status"], "[ ]")
+            self._log(f"{icon:<8} {c['name']:<22} : {c['detail']}")
+            if c["advice"]:
+                self._log(f"         └─ 建议: {c['advice']}")
+            if c["status"] == "FAIL":
+                all_pass = False
+        self._log("===========================================================================")
+        if all_pass:
+            self._log("🎉 核心依赖检测完毕，全部就绪！可以直接开始制作课程。")
+        else:
+            self._log("⚠️ 存在缺失依赖，请按照上述提示配置。")
+
     def _start_pipeline(self):
         if self.is_running:
             return
@@ -408,14 +458,15 @@ class CudaStudioApp(ctk.CTk):
         self._log(f"[*] 渲染画质: {quality_str} | 旁白音色: {voice_str}")
 
         # Start worker thread
+        resume_mode = self.resume_var.get()
         self.worker_thread = threading.Thread(
             target=self._run_worker,
-            args=(pdf_path, chunk_key, api_key, voice_str, quality_flag),
+            args=(pdf_path, chunk_key, api_key, voice_str, quality_flag, resume_mode),
             daemon=True
         )
         self.worker_thread.start()
 
-    def _run_worker(self, pdf_path: Path, chunk_key: str, api_key: str, voice: str, quality: str):
+    def _run_worker(self, pdf_path: Path, chunk_key: str, api_key: str, voice: str, quality: str, resume: bool = True):
         emitter = LogEmitter(self.log_queue)
         old_stdout = sys.stdout
         sys.stdout = emitter
@@ -452,7 +503,7 @@ class CudaStudioApp(ctk.CTk):
 
                 # Stage 2 & 3: Dual-Track Production
                 self.log_queue.put(("stage", (2, f"[{idx}/{total_sections}] Layer 3 & 4: 正在进行图文幻灯片与 Manim 物理微架构推演渲染 ({quality})...")))
-                sec_result = full_orch.produce_section_video(sec, quality=quality)
+                sec_result = full_orch.produce_section_video(sec, quality=quality, resume=resume)
 
                 final_video = sec_result.get("final_video")
                 if final_video and final_video.exists():

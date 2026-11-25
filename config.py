@@ -43,3 +43,33 @@ MIN_ACTION_DURATION = 2.0   # Minimum seconds for any visual action
 
 # Default CUDA Document
 DEFAULT_PDF_PATH = BASE_DIR / "cuda-programming-guide.pdf"
+
+# Execution & Checkpoint Cache Mode
+DEFAULT_RESUME_MODE = True  # Automatically resume from cached intermediate steps
+FORCE_REGENERATE = False    # When True, ignores cache and regenerates all slides/audio
+
+# Automatic FFmpeg Auto-Discovery & Path Injection
+def setup_ffmpeg_path():
+    """Ensures ffmpeg is discoverable by system PATH and subprocesses."""
+    import shutil
+    if shutil.which("ffmpeg"):
+        return
+
+    # Check local venv Scripts
+    venv_ffmpeg = BASE_DIR / ".venv" / "Scripts" / "ffmpeg.exe"
+    if venv_ffmpeg.exists():
+        os.environ["PATH"] = f"{venv_ffmpeg.parent};" + os.environ.get("PATH", "")
+        return
+
+    # Check imageio_ffmpeg binary
+    try:
+        import imageio_ffmpeg
+        ffmpeg_bin = Path(imageio_ffmpeg.get_ffmpeg_exe())
+        if ffmpeg_bin.exists():
+            os.environ["PATH"] = f"{ffmpeg_bin.parent};" + os.environ.get("PATH", "")
+            return
+    except Exception:
+        pass
+
+setup_ffmpeg_path()
+

@@ -19,6 +19,12 @@ import config
 
 def find_python_interpreter() -> Path:
     """Finds a valid Python interpreter that has Manim installed."""
+    try:
+        import manim
+        return Path(sys.executable)
+    except Exception:
+        pass
+
     candidates = [
         config.BASE_DIR / ".venv" / "Scripts" / "python.exe",
         Path(sys.executable).resolve().parent / ".venv" / "Scripts" / "python.exe",
@@ -40,7 +46,7 @@ def find_python_interpreter() -> Path:
                 res = subprocess.run(
                     [str(c), "-c", "import manim"],
                     capture_output=True,
-                    timeout=6,
+                    timeout=12,
                     creationflags=creationflags,
                     startupinfo=startupinfo,
                 )
@@ -48,6 +54,7 @@ def find_python_interpreter() -> Path:
                     return c
             except Exception:
                 pass
+
 
     for c in candidates:
         if c.exists() and "python" in c.name.lower():
@@ -532,7 +539,162 @@ class CudaSyncthreadsScene(CUDAThemeScene):
 '''
 
 
+# ==========================================
+# TEMPLATE 7: Tiled Matrix Multiplication (GEMM)
+# ==========================================
+SCENE_TEMPLATE_TILED_GEMM = '''# -*- coding: utf-8 -*-
+from manim import *
+import sys
+from pathlib import Path
+
+# Load project modules
+sys.path.insert(0, r"{project_root}")
+from assets.styles import *
+from assets.cuda_manim_lib import CUDAThemeScene, MemorySlot, ThreadItem
+
+class CudaTiledGemmScene(CUDAThemeScene):
+    def construct(self):
+        super().construct()
+
+        header = self.create_header("共享内存分块矩阵乘法 (Tiled GEMM)", "高延迟显存瓶颈 vs 片上缓存空间复用")
+        code_badge = self.create_code_badge("C[row][col] += A[row][k] * B[k][col]; // 原始显存暴力访存", position=UP * 2.0)
+        self.play(FadeIn(header), FadeIn(code_badge), run_time={b1_action_time} * 0.4)
+
+        mat_a = Square(side_length=2.2, color=BLUE_D, fill_color=CARD_BG, fill_opacity=0.8).move_to(LEFT * 3.5 + DOWN * 0.5)
+        mat_b = Square(side_length=2.2, color=BLUE_E, fill_color=CARD_BG, fill_opacity=0.8).move_to(RIGHT * 3.5 + DOWN * 0.5)
+        mat_c = Square(side_length=2.2, color=NVIDIA_GREEN, fill_color=CARD_BG, fill_opacity=0.8).move_to(DOWN * 0.5)
+
+        lbl_a = Text("Matrix A (Global)", font_size=FONT_BADGE_SIZE, color=TEXT_SECONDARY).next_to(mat_a, UP, buff=0.15)
+        lbl_b = Text("Matrix B (Global)", font_size=FONT_BADGE_SIZE, color=TEXT_SECONDARY).next_to(mat_b, UP, buff=0.15)
+        lbl_c = Text("Matrix C (Global)", font_size=FONT_BADGE_SIZE, color=NVIDIA_GREEN).next_to(mat_c, UP, buff=0.15)
+
+        self.play(
+            FadeIn(mat_a), FadeIn(lbl_a),
+            FadeIn(mat_b), FadeIn(lbl_b),
+            FadeIn(mat_c), FadeIn(lbl_c),
+            run_time={b1_action_time} * 0.6
+        )
+        self.wait({b1_pause})
+
+        tile_badge = self.create_code_badge("__shared__ float s_A[TILE][TILE], s_B[TILE][TILE];", position=UP * 2.0)
+        self.play(FadeOut(code_badge), FadeIn(tile_badge), run_time=0.5)
+
+        tile_a = Square(side_length=0.9, color=YELLOW, fill_color=YELLOW, fill_opacity=0.3).move_to(mat_a.get_center())
+        tile_b = Square(side_length=0.9, color=YELLOW, fill_color=YELLOW, fill_opacity=0.3).move_to(mat_b.get_center())
+
+        smem_box = RoundedRectangle(corner_radius=0.15, width=4.5, height=1.1, color=YELLOW, fill_color=CARD_BG, fill_opacity=0.9).move_to(DOWN * 2.5)
+        smem_lbl = Text("SM 片上高速缓存 (Shared Memory Tiles)", font_size=FONT_BADGE_SIZE, color=YELLOW).move_to(smem_box.get_center())
+
+        self.play(
+            FadeIn(tile_a), FadeIn(tile_b),
+            FadeIn(smem_box), FadeIn(smem_lbl),
+            run_time={b2_action_time} * 0.5
+        )
+
+        flow_a = Arrow(start=tile_a.get_bottom(), end=smem_box.get_left(), color=YELLOW, buff=0.1)
+        flow_b = Arrow(start=tile_b.get_bottom(), end=smem_box.get_right(), color=YELLOW, buff=0.1)
+
+        self.play(GrowArrow(flow_a), GrowArrow(flow_b), run_time=0.6)
+        sync_txt = Text("__syncthreads(); // 分块协作搬运完成", font_size=FONT_BADGE_SIZE + 2, color=NVIDIA_GREEN, weight=BOLD).next_to(smem_box, DOWN, buff=0.2)
+        self.play(FadeIn(sync_txt), run_time=0.5)
+        self.wait({b2_pause})
+
+        opt_badge = self.create_code_badge("算力复用：每个全局数据被线程块重用 TILE 次 (算力暴涨数十倍)", position=UP * 2.0)
+        self.play(
+            FadeOut(tile_badge), FadeOut(sync_txt),
+            FadeOut(flow_a), FadeOut(flow_b),
+            FadeIn(opt_badge),
+            mat_c.animate.set_color(NVIDIA_GREEN),
+            run_time=0.6
+        )
+        self.play(
+            Flash(mat_c, color=NVIDIA_GREEN, flash_radius=1.5),
+            run_time={b3_action_time} * 0.7
+        )
+        self.deliberate_pause({b3_pause})
+'''
+
+
+# ==========================================
+# TEMPLATE 8: CUDA Streams & Overlap
+# ==========================================
+SCENE_TEMPLATE_STREAM_OVERLAP = '''# -*- coding: utf-8 -*-
+from manim import *
+import sys
+from pathlib import Path
+
+# Load project modules
+sys.path.insert(0, r"{project_root}")
+from assets.styles import *
+from assets.cuda_manim_lib import CUDAThemeScene, MemorySlot
+
+class CudaStreamOverlapScene(CUDAThemeScene):
+    def construct(self):
+        super().construct()
+
+        header = self.create_header("CUDA 多流并发与时序重叠 (Stream Overlap)", "默认流串行阻塞 vs 双缓冲异步隐藏延迟")
+        code_badge = self.create_code_badge("cudaMemcpy(H2D); kernel<<<...>>>(); cudaMemcpy(D2H); // 串行停滞", position=UP * 2.0)
+        self.play(FadeIn(header), FadeIn(code_badge), run_time={b1_action_time} * 0.4)
+
+        time_axis = Arrow(start=LEFT * 5.0, end=RIGHT * 5.0, color=TEXT_SECONDARY).move_to(DOWN * 2.3)
+        time_lbl = Text("时间轴 (Timeline)", font_size=FONT_BADGE_SIZE, color=TEXT_SECONDARY).next_to(time_axis, DOWN, buff=0.1)
+
+        b_copy1 = Rectangle(width=2.5, height=0.7, color=BLUE, fill_color=BLUE, fill_opacity=0.6).move_to(LEFT * 3.5 + UP * 0.4)
+        lbl_c1 = Text("Copy H2D", font_size=FONT_BADGE_SIZE, color=TEXT_PRIMARY).move_to(b_copy1.get_center())
+
+        b_kern1 = Rectangle(width=2.5, height=0.7, color=NVIDIA_GREEN, fill_color=NVIDIA_GREEN, fill_opacity=0.6).move_to(LEFT * 0.5 + UP * 0.4)
+        lbl_k1 = Text("Kernel<<<>>>", font_size=FONT_BADGE_SIZE, color=TEXT_PRIMARY).move_to(b_kern1.get_center())
+
+        b_copy2 = Rectangle(width=2.5, height=0.7, color=PURPLE, fill_color=PURPLE, fill_opacity=0.6).move_to(RIGHT * 2.5 + UP * 0.4)
+        lbl_c2 = Text("Copy D2H", font_size=FONT_BADGE_SIZE, color=TEXT_PRIMARY).move_to(b_copy2.get_center())
+
+        self.play(FadeIn(time_axis), FadeIn(time_lbl), run_time=0.4)
+        self.play(
+            FadeIn(b_copy1), FadeIn(lbl_c1),
+            FadeIn(b_kern1), FadeIn(lbl_k1),
+            FadeIn(b_copy2), FadeIn(lbl_c2),
+            run_time={b1_action_time} * 0.6
+        )
+        self.wait({b1_pause})
+
+        async_badge = self.create_code_badge("cudaMemcpyAsync(..., stream1); kernel<<<..., stream2>>>(); // 多流流水线", position=UP * 2.0)
+        self.play(
+            FadeOut(code_badge),
+            FadeIn(async_badge),
+            FadeOut(b_copy1), FadeOut(lbl_c1),
+            FadeOut(b_kern1), FadeOut(lbl_k1),
+            FadeOut(b_copy2), FadeOut(lbl_c2),
+            run_time=0.5
+        )
+
+        s1_copy = Rectangle(width=2.2, height=0.6, color=BLUE, fill_color=BLUE, fill_opacity=0.7).move_to(LEFT * 2.5 + UP * 0.6)
+        s1_lbl = Text("Stream 0: Copy", font_size=FONT_BADGE_SIZE - 2, color=TEXT_PRIMARY).move_to(s1_copy.get_center())
+
+        s2_kern = Rectangle(width=2.2, height=0.6, color=NVIDIA_GREEN, fill_color=NVIDIA_GREEN, fill_opacity=0.7).move_to(LEFT * 0.5 + DOWN * 0.3)
+        s2_lbl = Text("Stream 1: Kernel", font_size=FONT_BADGE_SIZE - 2, color=TEXT_PRIMARY).move_to(s2_kern.get_center())
+
+        s3_copy = Rectangle(width=2.2, height=0.6, color=PURPLE, fill_color=PURPLE, fill_opacity=0.7).move_to(RIGHT * 1.5 + DOWN * 1.2)
+        s3_lbl = Text("Stream 2: Next Copy", font_size=FONT_BADGE_SIZE - 2, color=TEXT_PRIMARY).move_to(s3_copy.get_center())
+
+        self.play(
+            FadeIn(s1_copy), FadeIn(s1_lbl),
+            FadeIn(s2_kern), FadeIn(s2_lbl),
+            FadeIn(s3_copy), FadeIn(s3_lbl),
+            run_time={b2_action_time} * 0.7
+        )
+
+        overlap_rect = DashedVMobject(Rectangle(width=3.5, height=2.4, color=YELLOW)).move_to(LEFT * 0.5 + DOWN * 0.3)
+        overlap_lbl = Text("PCIe 传输与 SM 算力 100% 完美重叠", font_size=FONT_BADGE_SIZE, color=YELLOW, weight=BOLD).next_to(overlap_rect, UP, buff=0.15)
+
+        self.play(Create(overlap_rect), FadeIn(overlap_lbl), run_time=0.8)
+        self.wait({b2_pause})
+
+        self.deliberate_pause({b3_pause})
+'''
+
+
 class ManimEngine:
+
     def __init__(self):
         self.scenes_dir = config.OUTPUT_DIR / "manim_scenes"
         self.videos_dir = config.OUTPUT_DIR / "videos"
@@ -571,7 +733,13 @@ class ManimEngine:
 
         # Intelligent Semantic Router for all CUDA architectural topics
         cid = chunk_id.lower()
-        if any(k in cid for k in ["warp", "diverge", "simt", "branch", "lockstep"]):
+        if any(k in cid for k in ["gemm", "matrix", "matmul", "tiled_gemm"]):
+            template = SCENE_TEMPLATE_TILED_GEMM
+            scene_class = "CudaTiledGemmScene"
+        elif any(k in cid for k in ["stream", "overlap", "async", "pipeline", "cudamemcpyasync"]):
+            template = SCENE_TEMPLATE_STREAM_OVERLAP
+            scene_class = "CudaStreamOverlapScene"
+        elif any(k in cid for k in ["warp", "diverge", "simt", "branch", "lockstep"]):
             template = SCENE_TEMPLATE_WARP_DIVERGENCE
             scene_class = "CudaWarpDivergenceScene"
         elif any(k in cid for k in ["bank", "shared", "smem", "tile"]):
@@ -583,13 +751,14 @@ class ManimEngine:
         elif any(k in cid for k in ["atomic", "race", "mutex", "lock", "conflict"]):
             template = SCENE_TEMPLATE_ATOMIC
             scene_class = "CudaAtomicScene"
-        elif any(k in cid for k in ["sync", "barrier", "cooperative", "async"]):
+        elif any(k in cid for k in ["sync", "barrier", "cooperative"]):
             template = SCENE_TEMPLATE_SYNCTHREADS
             scene_class = "CudaSyncthreadsScene"
         else:
             # Default to Thread Hierarchy, Grid & Linear Mapping
             template = SCENE_TEMPLATE_GLOBAL_ID
             scene_class = "CudaGlobalIdScene"
+
 
         code_str = template.format(
             project_root=str(config.BASE_DIR).replace("\\", "\\\\"),

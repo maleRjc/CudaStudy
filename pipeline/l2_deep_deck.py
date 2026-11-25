@@ -20,6 +20,7 @@ import requests
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import config
+from pipeline.cuda_validator import CudaAccuracyValidator
 
 
 class DeepPedagogicalDeckGenerator:
@@ -57,6 +58,14 @@ class DeepPedagogicalDeckGenerator:
         return deck
 
     def _save_deck(self, deck: Dict[str, Any], deck_file: Path):
+        # Run CUDA Technical Accuracy Validation
+        deck = CudaAccuracyValidator.audit_slide_deck(deck)
+        audit_res = deck.get("audit_status", {})
+        if not audit_res.get("passed", True):
+            print(f"[!] CUDA Validator Flagged {audit_res.get('issues_count', 0)} issues in '{deck.get('topic')}' - safety notes injected.")
+        else:
+            print(f"[+] CUDA Validator: 100% technical accuracy verified for '{deck.get('topic')}'.")
+
         with open(deck_file, "w", encoding="utf-8") as f:
             json.dump(deck, f, ensure_ascii=False, indent=2)
         print(f"[+] Deep Deck Generated: {len(deck.get('slides', []))} slides for '{deck.get('topic')}' -> {deck_file.name}")

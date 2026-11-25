@@ -11,6 +11,7 @@ Takes ANY section from ANY technical PDF:
 """
 
 import json
+import time
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 
@@ -36,11 +37,60 @@ class FullBookOrchestrator:
         self.composer = VideoComposer()
         self.output_dir = config.OUTPUT_DIR / "videos"
 
-    def produce_section_video(self, section: Dict[str, Any], quality: str = "-ql") -> Dict[str, Any]:
-        """Produces a complete, exhaustive lecture video for ANY section in the book."""
+    def _update_status(self, sec_id: str, status: str, details: Optional[Dict[str, Any]] = None):
+        """Updates persistent checkpoint progress in output/curriculum/production_status.json."""
+        status_file = config.OUTPUT_DIR / "curriculum" / "production_status.json"
+        status_file.parent.mkdir(parents=True, exist_ok=True)
+        data = {}
+        if status_file.exists():
+            try:
+                with open(status_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+            except Exception:
+                data = {}
+        data[sec_id] = {
+            "status": status,
+            "updated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+            **(details or {})
+        }
+        with open(status_file, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+
+    def produce_section_video(
+        self,
+        section: Dict[str, Any],
+        quality: str = "-ql",
+        resume: bool = True,
+        force: bool = False
+    ) -> Dict[str, Any]:
+        """
+        Produces a complete, exhaustive lecture video for ANY section in the book.
+        Supports seamless checkpoint resume and caching to avoid duplicate compute.
+        """
         sec_title = section["title"]
         sec_id = section["sec_id"]
+        final_video_path = config.OUTPUT_DIR / "videos" / f"{sec_id}_final.mp4"
+        md_ppt = config.OUTPUT_DIR / "decks" / f"{sec_id}_presentation.md"
+        html_ppt = config.OUTPUT_DIR / "decks" / f"{sec_id}_presentation.html"
 
+        # Checkpoint Resume: If master video already produced and not forcing re-render
+        if resume and not force and final_video_path.exists() and final_video_path.stat().st_size > 50000:
+            print(f"\n======================================================================")
+            print(f"⏩ [Checkpoint Resume] Found completed video for {sec_title}!")
+            print(f"    Video: {final_video_path} ({round(final_video_path.stat().st_size / 1024 / 1024, 2)} MB)")
+            print(f"======================================================================")
+            self._update_status(sec_id, "COMPLETED", {"video": str(final_video_path)})
+            return {
+                "sec_id": sec_id,
+                "topic": sec_title,
+                "slides_count": 0,
+                "deck_md": md_ppt,
+                "deck_html": html_ppt,
+                "final_video": final_video_path,
+                "timeline": {}
+            }
+
+        self._update_status(sec_id, "IN_PROGRESS")
         print(f"\n======================================================================")
         print(f"📘 [Full Book Section Production] {sec_title} (P{section.get('start_page')}-P{section.get('end_page')})")
         print(f"======================================================================")
@@ -56,8 +106,6 @@ class FullBookOrchestrator:
         slides = deck.get("slides", [])
 
         # 3. Export standalone presentations (HTML & Markdown)
-        md_ppt = config.OUTPUT_DIR / "decks" / f"{sec_id}_presentation.md"
-        html_ppt = config.OUTPUT_DIR / "decks" / f"{sec_id}_presentation.html"
         export_deck_to_markdown_ppt(deck, md_ppt)
         export_deck_to_html_presentation(deck, html_ppt)
 
@@ -77,6 +125,13 @@ class FullBookOrchestrator:
             s_type = s.get("slide_type", "")
             duration = s.get("total_beat_duration", 5.0)
             audio_path = Path(s.get("audio_file", ""))
+            clip_path = clip_dir / f"clip_slide_{s_id}.mp4"
+
+            # Check individual slide cache
+            if resume and not force and clip_path.exists() and clip_path.stat().st_size > 5000:
+                print(f"    - Slide {s_id}: ⏩ [Cached] Reusing existing clip ({clip_path.name})")
+                sub_clips.append(clip_path)
+                continue
 
             # If slide is designated for Manim physics simulation, render via Manim
             if s_type == "manim_physics_demo" or "collision" in s.get("visual_spec", {}).get("layout", ""):
@@ -84,8 +139,7 @@ class FullBookOrchestrator:
                 scene_f, scene_c = self.manim_engine.generate_code_for_timeline(timeline)
                 raw_manim = self.manim_engine.render_scene(scene_f, scene_c, quality=quality)
                 if raw_manim and raw_manim.exists():
-                    manim_clip = clip_dir / f"clip_slide_{s_id}.mp4"
-                    composed_manim = self.composer.compose_final_video(raw_manim, timeline, output_mp4=manim_clip)
+                    composed_manim = self.composer.compose_final_video(raw_manim, timeline, output_mp4=clip_path)
                     if composed_manim and composed_manim.exists():
                         sub_clips.append(composed_manim)
                         continue
@@ -93,7 +147,6 @@ class FullBookOrchestrator:
             # Otherwise, render high-definition PPT Lecture Slide Card
             print(f"    - Slide {s_id}: Rendering High-Def PPT Lecture Card ({s.get('title')})...")
             img_path = self.slide_renderer.render_slide_image(s, topic=topic)
-            clip_path = clip_dir / f"clip_slide_{s_id}.mp4"
             rendered_clip = self.slide_renderer.create_slide_video_clip(img_path, audio_path, clip_path, duration)
             if rendered_clip and rendered_clip.exists():
                 sub_clips.append(rendered_clip)
@@ -103,6 +156,7 @@ class FullBookOrchestrator:
         section_video_name = f"{sec_id}_final.mp4"
         final_video = self.composer.concatenate_course_videos(sub_clips, output_filename=section_video_name)
 
+        self._update_status(sec_id, "COMPLETED", {"video": str(final_video), "clips": len(sub_clips)})
         print(f"\n🎉 [Section Completed] Final Video: {final_video}")
         return {
             "sec_id": sec_id,
@@ -113,6 +167,7 @@ class FullBookOrchestrator:
             "final_video": final_video,
             "timeline": timeline
         }
+
 
 
 if __name__ == "__main__":

@@ -32,12 +32,29 @@ class ChapterOrchestrator:
         self.composer = VideoComposer()
         self.output_dir = config.OUTPUT_DIR / "videos"
 
-    def produce_chapter_video(self, chunk: Dict[str, Any], quality: str = "-ql") -> Dict[str, Any]:
+    def produce_chapter_video(self, chunk: Dict[str, Any], quality: str = "-ql", resume: bool = True, force: bool = False) -> Dict[str, Any]:
         """Produces full chapter video with both PPT slides and Manim animation."""
         concept_id = chunk["chunk_id"]
+        final_mp4 = config.OUTPUT_DIR / "videos" / f"{concept_id}_chapter_final.mp4"
+        md_ppt = config.OUTPUT_DIR / "decks" / f"{concept_id}_presentation.md"
+        html_ppt = config.OUTPUT_DIR / "decks" / f"{concept_id}_presentation.html"
+
+        if resume and not force and final_mp4.exists() and final_mp4.stat().st_size > 50000:
+            print(f"[+] Chapter Checkpoint: Found existing video -> {final_mp4.name} ({round(final_mp4.stat().st_size/1024/1024, 2)} MB). Skipping.")
+            return {
+                "concept_id": concept_id,
+                "topic": chunk.get("title", concept_id),
+                "slides_count": 0,
+                "deck_md": md_ppt,
+                "deck_html": html_ppt,
+                "chapter_video": final_mp4,
+                "timeline": {}
+            }
+
         print(f"\n======================================================================")
         print(f"🎬 [Chapter Production] Starting: {chunk.get('title', concept_id)}")
         print(f"======================================================================")
+
 
         # Step 1: Generate PPT Lecture Deck
         print(f"[*] Step 1: Generating structured PPT lecture deck from documentation...")
@@ -67,6 +84,13 @@ class ChapterOrchestrator:
             s_type = s.get("slide_type", "")
             duration = s.get("total_beat_duration", 5.0)
             audio_path = Path(s.get("audio_file", ""))
+            clip_path = clip_dir / f"clip_slide_{s_id}.mp4"
+
+            # Check individual slide cache
+            if resume and not force and clip_path.exists() and clip_path.stat().st_size > 5000:
+                print(f"    - Slide {s_id}: ⏩ [Cached] Reusing existing clip ({clip_path.name})")
+                sub_clips.append(clip_path)
+                continue
 
             # If slide is the dedicated physics/hardware simulation, render via Manim!
             if s_type == "manim_physics_demo" or "collision" in s.get("visual_spec", {}).get("layout", ""):
@@ -74,8 +98,7 @@ class ChapterOrchestrator:
                 scene_f, scene_c = self.manim_engine.generate_code_for_timeline(timeline)
                 raw_manim = self.manim_engine.render_scene(scene_f, scene_c, quality=quality)
                 if raw_manim and raw_manim.exists():
-                    manim_clip = clip_dir / f"clip_slide_{s_id}.mp4"
-                    composed_manim = self.composer.compose_final_video(raw_manim, timeline, output_mp4=manim_clip)
+                    composed_manim = self.composer.compose_final_video(raw_manim, timeline, output_mp4=clip_path)
                     if composed_manim and composed_manim.exists():
                         sub_clips.append(composed_manim)
                         continue
@@ -83,10 +106,10 @@ class ChapterOrchestrator:
             # Otherwise, render high-definition PPT lecture slide video card
             print(f"    - Rendering Slide {s_id} via PPT Slide Card Engine: {s.get('title')}...")
             img_path = self.slide_renderer.render_slide_image(s, topic=topic)
-            clip_path = clip_dir / f"clip_slide_{s_id}.mp4"
             rendered_clip = self.slide_renderer.create_slide_video_clip(img_path, audio_path, clip_path, duration)
             if rendered_clip and rendered_clip.exists():
                 sub_clips.append(rendered_clip)
+
 
         # Step 4: Stitch Chapter Sub-Clips into Single Seamless Chapter Master Video
         print(f"[*] Step 4: Stitching {len(sub_clips)} clips into Chapter Master Video...")
