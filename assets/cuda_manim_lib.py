@@ -181,3 +181,124 @@ class MemoryLane(VGroup):
 
     def get_slot(self, idx: int) -> MemorySlot:
         return self.slots[idx]
+
+
+class Warp32Grid(VGroup):
+    """
+    32-Thread Hardware Warp Execution Unit (Based on NVIDIA CUDA 13.3 SIMT Architecture).
+    Organized as 4 rows x 8 columns = 32 physical threads in lockstep execution.
+    """
+    def __init__(self, warp_id: int = 0, cell_size: float = 0.42, buff: float = 0.08, **kwargs):
+        super().__init__(**kwargs)
+        self.warp_id = warp_id
+        self.cell_size = cell_size
+        self.threads = []
+
+        grid_group = VGroup()
+        for r in range(4):
+            row_group = VGroup()
+            for c in range(8):
+                tid = r * 8 + c
+                box = Square(side_length=cell_size, color=NVIDIA_GREEN, fill_color=BG_DARK, fill_opacity=0.9, stroke_width=1.5)
+                lbl = Text(str(tid), font_size=FONT_BADGE_SIZE - 4, color=TEXT_PRIMARY, weight=BOLD)
+                lbl.move_to(box.get_center())
+                t_item = VGroup(box, lbl)
+                t_item.tid = tid
+                t_item.box = box
+                t_item.lbl = lbl
+                self.threads.append(t_item)
+                row_group.add(t_item)
+            row_group.arrange(RIGHT, buff=buff)
+            grid_group.add(row_group)
+
+        grid_group.arrange(DOWN, buff=buff)
+        self.grid_group = grid_group
+
+        # Outer Warp Boundary
+        self.outer_border = SurroundingRectangle(
+            grid_group,
+            color=NVIDIA_GREEN,
+            buff=0.15,
+            corner_radius=0.12,
+            stroke_width=2
+        )
+        self.title_lbl = Text(f"Warp {warp_id} · 32 硬件线程 (SIMT 锁步执行束)", font_size=FONT_BADGE_SIZE, color=NVIDIA_GREEN, weight=BOLD)
+        self.title_lbl.next_to(self.outer_border, UP, buff=0.12)
+
+        self.add(self.outer_border, self.title_lbl, self.grid_group)
+
+    def get_thread(self, tid: int) -> VGroup:
+        return self.threads[tid]
+
+    def set_thread_active(self, tid: int, is_active: bool, active_color=NVIDIA_GREEN, idle_color=THREAD_IDLE):
+        t = self.threads[tid]
+        if is_active:
+            t.box.set_color(active_color)
+            t.box.set_fill(active_color, opacity=0.85)
+            t.lbl.set_color(BG_DARK)
+        else:
+            t.box.set_color(idle_color)
+            t.box.set_fill(CARD_BG, opacity=0.4)
+            t.lbl.set_color(TEXT_SECONDARY)
+
+    def set_divergence_mask(self, branch_a_tids: list, branch_b_tids: list):
+        """Highlights SIMT branch divergence between two sets of thread IDs."""
+        for tid in branch_a_tids:
+            self.set_thread_active(tid, True, active_color=WARP_COLOR_A)
+        for tid in branch_b_tids:
+            self.set_thread_active(tid, False, idle_color=WARP_COLOR_B)
+
+
+class HostDeviceFlowDiagram(VGroup):
+    """
+    Host to Device Pipeline Overview (Derived from 'CUDA GPU执行架构流程图.png').
+    Shows CPU Host Software layer -> PCIe Launch -> GPU Device Hardware SM layer.
+    """
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+        # Host Box (Left)
+        host_bg = RoundedRectangle(corner_radius=0.15, width=3.8, height=3.6, color=BLUE_C, fill_color=CARD_BG, fill_opacity=0.9)
+        host_title = Text("CPU 端 (Host 软件抽象)", font_size=FONT_BADGE_SIZE + 2, color=BLUE_C, weight=BOLD).next_to(host_bg.get_top(), DOWN, buff=0.2)
+        host_app = Text("1. 应用程序 (CUDA App)", font_size=FONT_BADGE_SIZE - 2, color=TEXT_PRIMARY).next_to(host_title, DOWN, buff=0.25)
+        host_launch = Text("2. vectorAdd<<<Grid, Block>>>()", font_size=FONT_BADGE_SIZE - 4, color=TEXT_CODE).next_to(host_app, DOWN, buff=0.2)
+        host_pcie = Text("3. 提交任务至硬件队列", font_size=FONT_BADGE_SIZE - 2, color=TEXT_SECONDARY).next_to(host_launch, DOWN, buff=0.2)
+        self.host_group = VGroup(host_bg, host_title, host_app, host_launch, host_pcie).move_to(LEFT * 4.2)
+
+        # Device Box (Right)
+        dev_bg = RoundedRectangle(corner_radius=0.15, width=4.8, height=3.6, color=NVIDIA_GREEN, fill_color=CARD_BG, fill_opacity=0.9)
+        dev_title = Text("GPU 端 (Device 硬件执行)", font_size=FONT_BADGE_SIZE + 2, color=NVIDIA_GREEN, weight=BOLD).next_to(dev_bg.get_top(), DOWN, buff=0.2)
+        grid_lbl = Text("Grid -> [Block 0] [Block 1] ... [Block N-1]", font_size=FONT_BADGE_SIZE - 3, color=TEXT_PRIMARY).next_to(dev_title, DOWN, buff=0.25)
+        sched_lbl = Text("硬件调度器 (GigaThread Scheduler)", font_size=FONT_BADGE_SIZE - 4, color=WARP_COLOR_A).next_to(grid_lbl, DOWN, buff=0.2)
+        sm_lbl = Text("分配至 SM 阵列 · 32 线程 Warp 锁步执行", font_size=FONT_BADGE_SIZE - 3, color=NVIDIA_GREEN).next_to(sched_lbl, DOWN, buff=0.2)
+        self.device_group = VGroup(dev_bg, dev_title, grid_lbl, sched_lbl, sm_lbl).move_to(RIGHT * 2.2)
+
+        # PCIe Launch Arrow (Center)
+        self.launch_arrow = Arrow(
+            start=self.host_group.get_right(),
+            end=self.device_group.get_left(),
+            color=NVIDIA_GREEN,
+            stroke_width=4,
+            buff=0.15
+        )
+        self.launch_lbl = Text("PCIe 启动\n(Kernel Launch)", font_size=FONT_BADGE_SIZE - 4, color=NVIDIA_GREEN, weight=BOLD).next_to(self.launch_arrow, UP, buff=0.1)
+
+        self.add(self.host_group, self.device_group, self.launch_arrow, self.launch_lbl)
+
+
+class DRAMBusTransaction(VGroup):
+    """
+    128-Byte DRAM Bus Transaction Alignment & Coalescing Visualizer.
+    Demonstrates 32 threads coalescing into a single memory sector transaction.
+    """
+    def __init__(self, is_coalesced: bool = True, **kwargs):
+        super().__init__(**kwargs)
+        self.is_coalesced = is_coalesced
+
+        # Main Bus Bar
+        color = NVIDIA_GREEN if is_coalesced else THREAD_CONFLICT
+        self.bus_bar = RoundedRectangle(corner_radius=0.1, width=7.2, height=0.6, color=color, fill_color=CARD_BG, fill_opacity=0.95)
+        status_txt = "128-Byte 连续物理扇区对齐 (1 次总线事务 · 100% 满带宽)" if is_coalesced else "非对齐跨步离散访存 (事务分裂为多次 · 吞吐暴跌至 25%)"
+        self.bus_lbl = Text(status_txt, font_size=FONT_BADGE_SIZE - 2, color=color, weight=BOLD).move_to(self.bus_bar.get_center())
+
+        self.add(self.bus_bar, self.bus_lbl)

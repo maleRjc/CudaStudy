@@ -708,6 +708,23 @@ class ManimEngine:
         chunk_id = timeline["chunk_id"]
         beats = timeline.get("beats", [])
 
+        # 1. Leverage DeepSeek Director for bespoke, high-fidelity Manim scene generation
+        try:
+            from pipeline.deepseek_director import DeepSeekDirector
+            director = DeepSeekDirector()
+            code_str, scene_class = director.generate_manim_code_for_concept(
+                topic=chunk_id,
+                timeline_beats=beats,
+                project_root=config.BASE_DIR
+            )
+            scene_file = self.scenes_dir / f"{chunk_id}_scene.py"
+            with open(scene_file, "w", encoding="utf-8") as f:
+                f.write(code_str)
+            print(f"[+] Layer 4: DeepSeek Director successfully generated Manim code in {scene_file.name} (Class: {scene_class})")
+            return scene_file, scene_class
+        except Exception as e:
+            print(f"[!] DeepSeek Director generation fallback to template: {e}")
+
         num_beats = len(beats)
         if num_beats >= 3:
             b1_time = beats[0].get("action_duration", 2.0)

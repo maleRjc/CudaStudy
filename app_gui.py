@@ -352,25 +352,36 @@ class CudaStudioApp(ctk.CTk):
             self._log(f"[*] 成功重载 PDF 目录树: 共发现 {len(self.curriculum_sections)} 个章节小节。\n")
 
     def _load_curriculum_from_pdf(self, pdf_path: Path):
-        """Dynamically parses all chapters & sections from the given PDF outline."""
+        """Dynamically parses all chapters & sections from the given PDF outline and DeepSeek Director."""
+        self.chunk_options = {}
+
+        # 1. First add the 30 System Curated Episodes (from CUDA原理与实现教学视频项目实施文档.docx)
+        try:
+            from pipeline.deepseek_director import CURRICULUM_30_EPISODES
+            for ep in CURRICULUM_30_EPISODES:
+                self.chunk_options[f"ep_{ep['ep_id']}"] = f"🌟 [实例文档第{ep['ep_id']}讲] {ep['title']} ({ep['duration']}, {ep['guide_pages']})"
+        except Exception as e:
+            print(f"[Warning] Loading 30-episode curriculum: {e}")
+
+        # 2. Add dynamic sections from PDF outline
         try:
             parser = FullBookPdfParser(pdf_path)
             curriculum = parser.extract_full_curriculum(min_level=1, max_level=1)
             self.curriculum_sections = curriculum
-            self.chunk_options = {}
 
-            # Add all dynamic sections from PDF
-            for s in curriculum[:35]:  # Load up to 35 major sections
-                label = f"[{s['index']:02d}] {s['title']} (P{s['start_page']}-P{s['end_page']}, {s['page_count']}页)"
+            for s in curriculum[:30]:  # Load major PDF sections
+                label = f"📄 [手册原生] {s['index']:02d} · {s['title']} (P{s['start_page']}-P{s['end_page']}, {s['page_count']}页)"
                 self.chunk_options[s["sec_id"]] = label
 
             self.chunk_options["all"] = "⚡ 顺序生产全部章节并拼接为长篇大课 (Batch & Stitch Master Course)"
         except Exception as e:
-            self.chunk_options = {
-                "sec_001_intro": "01 · Programming Model (P20-P30)",
-                "sec_002_simt": "02 · Writing SIMT Kernels (P61-P87)",
-                "all": "⚡ 全部章节一键生产"
-            }
+            print(f"[Warning] PDF outline parsing fallback: {e}")
+            if not self.chunk_options:
+                self.chunk_options = {
+                    "sec_001_intro": "01 · Programming Model (P20-P30)",
+                    "sec_002_simt": "02 · Writing SIMT Kernels (P61-P87)",
+                    "all": "⚡ 全部章节一键生产"
+                }
 
     def _log(self, text: str):
         self.log_textbox.insert("end", text + "\n")
@@ -478,7 +489,26 @@ class CudaStudioApp(ctk.CTk):
             curriculum = full_orch.parser.extract_full_curriculum(min_level=1, max_level=1)
 
             target_sections = []
-            if chunk_key == "all":
+            if chunk_key.startswith("ep_"):
+                ep_num = chunk_key.replace("ep_", "")
+                from pipeline.deepseek_director import DeepSeekDirector
+                director = DeepSeekDirector(api_key=api_key)
+                ep_spec = director.find_episode_by_id_or_title(ep_num)
+                if ep_spec:
+                    p_parts = ep_spec.get("guide_pages", "P20-P30").replace("P", "").split("-")
+                    p_start = int(p_parts[0]) if p_parts[0].isdigit() else 20
+                    p_end = int(p_parts[1]) if len(p_parts) > 1 and p_parts[1].isdigit() else p_start + 10
+                    target_sections = [{
+                        "sec_id": f"ep_{ep_num}_{ep_spec['ep_id']}",
+                        "title": f"第{ep_num}讲 · {ep_spec['title']}",
+                        "start_page": p_start,
+                        "end_page": p_end,
+                        "page_count": p_end - p_start + 1,
+                        "level": 1,
+                        "index": int(ep_num) if ep_num.isdigit() else 1,
+                        "episode_spec": ep_spec
+                    }]
+            elif chunk_key == "all":
                 target_sections = curriculum[:10]  # Batch top 10 core chapters
             else:
                 matched = [s for s in curriculum if s["sec_id"] == chunk_key]

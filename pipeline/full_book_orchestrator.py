@@ -25,6 +25,7 @@ from pipeline.l3_audio_timing import AudioTimingEngine
 from pipeline.l4_manim_generator import ManimEngine
 from pipeline.l4b_slide_renderer import SlideVideoRenderer
 from pipeline.l5_video_composer import VideoComposer
+from pipeline.deepseek_director import DeepSeekDirector
 
 
 class FullBookOrchestrator:
@@ -35,6 +36,7 @@ class FullBookOrchestrator:
         self.slide_renderer = SlideVideoRenderer()
         self.manim_engine = ManimEngine()
         self.composer = VideoComposer()
+        self.director = DeepSeekDirector(api_key=api_key)
         self.output_dir = config.OUTPUT_DIR / "videos"
 
     def _update_status(self, sec_id: str, status: str, details: Optional[Dict[str, Any]] = None):
@@ -133,10 +135,24 @@ class FullBookOrchestrator:
                 sub_clips.append(clip_path)
                 continue
 
-            # If slide is designated for Manim physics simulation, render via Manim
-            if s_type == "manim_physics_demo" or "collision" in s.get("visual_spec", {}).get("layout", ""):
-                print(f"    - Slide {s_id}: Rendering 3Blue1Brown-style Manim Physics Animation...")
-                scene_f, scene_c = self.manim_engine.generate_code_for_timeline(timeline)
+            # Intelligent Animation Curation via DeepSeek Director
+            anim_eval = self.director.evaluate_animation_necessity(s.get("title", ""), s.get("narrative_script", ""))
+            should_animate = (
+                s_type == "manim_physics_demo"
+                or anim_eval.get("needs_animation", False)
+                or "collision" in s.get("visual_spec", {}).get("layout", "")
+            )
+
+            # If slide is designated for Manim microarchitecture simulation, render via Manim
+            if should_animate:
+                reason = anim_eval.get("reason", "微架构动态演进仿真")
+                print(f"    - Slide {s_id}: Rendering 3Blue1Brown-style Manim Physics Animation ({reason})...")
+                slide_timeline = {
+                    "chunk_id": f"{sec_id}_slide_{s_id}",
+                    "beats": s.get("beats", []),
+                    "title": s.get("title", sec_title)
+                }
+                scene_f, scene_c = self.manim_engine.generate_code_for_timeline(slide_timeline)
                 raw_manim = self.manim_engine.render_scene(scene_f, scene_c, quality=quality)
                 if raw_manim and raw_manim.exists():
                     composed_manim = self.composer.compose_clip_with_audio(raw_manim, audio_path, clip_path, duration)
