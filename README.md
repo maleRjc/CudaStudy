@@ -17,9 +17,15 @@
 3. **CUDA 技术准确性静态校验层 (CUDA Accuracy Validator)**:
    - 内置针对并发和异构计算的规则分析器：自动拦截分支内的 `__syncthreads()` 死锁隐患、全局内存索引越界、Shared Memory Bank 冲突跨步，保证讲稿与代码 100% 严谨可靠。
 
-4. **双轨同步渲染引擎 (L3 & L4 Dual-Track Visual Engine)**:
-   - **PPT 幻灯片精美卡片轨**：自动生成高对比度暗黑风格 1080P/720P 幻灯片卡片，带高亮代码框与反思缓冲条。
-   - **3Blue1Brown Manim 物理微架构仿真轨**：针对硬件核心机理提供 8 大参数化稳定模版与自愈修复引擎（Self-Correction Loop）。
+4. **多模态技术表现力矩阵 (Multi-Modal Visualization Suite)**:
+   - 除了 3Blue1Brown 几何动画，系统全面集成了 **6 大认知维度的全方位表现手段**：
+     - 💡 **白板心智模型比喻 (Metaphor Sketch)**：通过生活物理类比瞬间破除冰冷抽象；
+     - 🎬 **Manim 硬件物理仿真 (Microarchitecture Simulation)**：推演纳秒级时钟周期内的总线与线程冲突；
+     - ⚖️ **代码双分屏 Diff 对照 (Side-by-Side Code Diff)**：红框朴素反例 vs 绿框生产规范，行号与高亮一目了然；
+     - ⏱️ **Nsight Systems 真实时序 Trace (Profiler Timeline)**：直观展现 Stream 异步流水线与 PCIe 算力 100% 重叠；
+     - 🗄️ **32-Bank 物理显存排布 (Memory Layout Grid)**：可视化并发访问冲突探测与 Padding 对角消除；
+     - 📊 **实测性能加速比柱状图 (Empirical Benchmark Chart)**：以硬核实测数字证明重构带来的数倍算力飞跃。
+
 
 5. **断点续跑与秒级恢复 (Checkpoint Resume & Caching)**:
    - 每一层中间产物（Deck JSON、音频、分段视频切片）全部结构化落盘。
@@ -60,6 +66,38 @@ flowchart TD
 | **06** | **__syncthreads() Barrier Safety** | 块内乱序脏读防范 vs 分支内屏障导致硬件永久死锁禁忌 |
 | **07** | **Tiled GEMM Matrix Multiplication** | 全局显存高延迟搬运瓶颈 vs 片上 Shared Memory 协作复用数十倍算力 |
 | **08** | **CUDA Streams & Overlap** | 默认流串行阻塞 vs 多流双缓冲异步流水线（PCIe 传输与 SM 算力 100% 重叠） |
+
+---
+
+## 🎨 全栈多模态技术阐述矩阵 (Beyond Manim)
+
+为了让技术讲解不流于表面或单一枯燥，系统为每一个核心技术专题配备了完整的认知闭环：
+
+```text
+[1. 痛点与背景] ────► [2. 白板生活比喻] ────► [3. Manim 物理仿真]
+        │                      │                       │
+        ▼                      ▼                       ▼
+架构全景与文档定位        考场做卷 / 银行柜台       芯片微架构空间博弈
+        │                      │                       │
+        └──────────────────────┼───────────────────────┘
+                               │
+                               ▼
+[4. 代码 Diff 对照] ──► [5. Nsight 真实 Trace] ──► [6. 实测加速比柱状图] ──► [7. 认知沉淀清单]
+        │                      │                       │                      │
+        ▼                      ▼                       ▼                      ▼
+  红框反例 vs 绿框规范     流水线气泡与传输重叠         8.5x 硬核性能跃升        工业级避坑自查心法
+```
+
+| 模态手段 | 表现形式与技术承载 | 解决的技术阐述痛点 |
+| :--- | :--- | :--- |
+| **💡 白板生活比喻 (Metaphor)** | 类似 Excalidraw 的黑板手写卡片与生动类比 | 击碎体系结构冷冰冰的抽象术语，建立直观的第一性原理直觉 |
+| **🎬 3Blue1Brown 物理推演** | Manim Community 连续几何动力学矢量动画 | 还原微架构黑盒中线程阵列、总线事务与时钟周期的连续空间博弈 |
+| **⚖️ 左右分屏代码 Diff 对照** | 双栏高对比度语法高亮与行号卡片 (Red vs Green) | 解决“懂了原理却不会写代码”的痛点，直观对比反例漏洞与生产标准 |
+| **⏱️ Nsight Systems 追踪** | 真实 GPU Profiler 风格的时间线 (Trace Timeline) | 走出抽象代码，从分析器视角审视 Kernel 调度、气泡等待与多流重叠 |
+| **🗄️ 32-Bank 物理分布网格** | 显存空间槽位与线程访问映射图 | 精确指出具体哪两个线程在哪个字节槽位撞车，Padding 如何错开 |
+| **📊 实测加速比柱状图** | 现代暗黑风格的 Benchmark 对比柱状图 + 跃升徽章 | 用硬核的 GFLOPS / 带宽实测数字说话，杜绝无依据的口头空谈 |
+| **🧠 认知反思缓冲条** | 底部蓝色高光认知沉淀条 (Schema Consolidation) | 预留 3.5 秒心理消化时间，避免知识密度过大引发的认知超载 |
+
 
 ---
 

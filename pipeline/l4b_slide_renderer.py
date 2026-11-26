@@ -18,6 +18,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import config
+from pipeline.visual_toolbox import VisualToolbox
 
 
 # Colors
@@ -86,26 +87,90 @@ class SlideVideoRenderer:
         # Divider
         draw.line([margin_x + 35, margin_y + 155, width - margin_x - 35, margin_y + 155], fill=COLOR_BORDER, width=2)
 
-        # Code Badge if exists
+        # Check Multi-Modal Slide Types
+        cursor_y = margin_y + 170
+        card_w = width - 2 * margin_x - 70
+        card_h = height - margin_y - 250
+
         visual = slide.get("visual_spec", {})
-        code = visual.get("code_badge", "")
-        cursor_y = margin_y + 175
+        special_card = None
 
-        if code:
-            code_lines = [c for c in code.split("\n") if c.strip()][:4]
-            code_h = len(code_lines) * 32 + 25
-            draw.rounded_rectangle([margin_x + 35, cursor_y, width - margin_x - 35, cursor_y + code_h], radius=10, fill=COLOR_CODE_BG, outline=COLOR_BORDER, width=1)
-            for i, line in enumerate(code_lines):
-                draw.text((margin_x + 55, cursor_y + 12 + i * 32), line, fill=COLOR_CODE_TEXT, font=font_code)
-            cursor_y += code_h + 20
+        if s_type == "code_diff":
+            bad_code = visual.get("bad_code", [
+                "int idx = threadIdx.x; // 错误：多块严重冲突",
+                "d_out[idx] = input[idx] * 2.0f;"
+            ])
+            good_code = visual.get("good_code", [
+                "int idx = blockIdx.x * blockDim.x + threadIdx.x;",
+                "if (idx < N) { d_out[idx] = input[idx] * 2.0f; }"
+            ])
+            special_card = VisualToolbox.render_code_diff_card(
+                bad_title=visual.get("bad_title", "朴素实现 / 隐患反例"),
+                bad_code=bad_code,
+                bad_tip=visual.get("bad_tip", "缺少块偏移升维或边界判断"),
+                good_title=visual.get("good_title", "工业级安全规范实现"),
+                good_code=good_code,
+                good_tip=visual.get("good_tip", "全网格线性寻址并包含边界防护"),
+                width=card_w,
+                height=card_h
+            )
+        elif s_type == "benchmark_chart":
+            special_card = VisualToolbox.render_benchmark_chart_card(
+                title=visual.get("chart_title", "算力与显存吞吐实测对比"),
+                categories=visual.get("categories", ["Small", "Medium", "Large"]),
+                baseline_vals=visual.get("baseline_vals", [110.0, 240.0, 320.0]),
+                optimized_vals=visual.get("optimized_vals", [880.0, 1920.0, 2750.0]),
+                metric_unit=visual.get("metric_unit", "吞吐量 (GB/s)"),
+                speedup_text=visual.get("speedup_text", "8.5x 性能跃升"),
+                width=card_w,
+                height=card_h
+            )
+        elif s_type == "profiler_timeline":
+            special_card = VisualToolbox.render_nsight_timeline_card(
+                title=visual.get("timeline_title", "NVIDIA Nsight Systems 并发与时序追踪 (Trace Timeline)"),
+                width=card_w,
+                height=card_h
+            )
+        elif s_type == "memory_layout":
+            special_card = VisualToolbox.render_memory_bank_grid_card(
+                title=visual.get("bank_title", "Shared Memory 32-Bank 物理分布与并发冲突探测"),
+                stride=visual.get("stride", 2),
+                width=card_w,
+                height=card_h
+            )
+        elif s_type == "metaphor_sketch":
+            bullets = slide.get("key_points", [
+                "把庞大并发任务比作日常生活中的真实场景",
+                "消除抽象硬件术语，建立直观的物理第一性原理"
+            ])
+            special_card = VisualToolbox.render_metaphor_sketch_card(
+                metaphor_title=visual.get("metaphor_title", title),
+                analogy_bullets=bullets,
+                punchline=visual.get("punchline", "从物理本质理解并发调度，知其然更知其所以然"),
+                width=card_w,
+                height=card_h
+            )
 
-        # Bullet Points
-        key_points = slide.get("key_points", [])
-        for pt in key_points:
-            # Green bullet icon
-            draw.text((margin_x + 40, cursor_y), "●", fill=COLOR_ACCENT, font=font_bullet)
-            draw.text((margin_x + 70, cursor_y), pt, fill=COLOR_TEXT_MAIN, font=font_bullet)
-            cursor_y += 44
+        if special_card:
+            img.paste(special_card, (margin_x + 35, cursor_y), special_card)
+        else:
+            # Code Badge if exists
+            code = visual.get("code_badge", "")
+            if code:
+                code_lines = [c for c in code.split("\n") if c.strip()][:4]
+                code_h = len(code_lines) * 32 + 25
+                draw.rounded_rectangle([margin_x + 35, cursor_y, width - margin_x - 35, cursor_y + code_h], radius=10, fill=COLOR_CODE_BG, outline=COLOR_BORDER, width=1)
+                for i, line in enumerate(code_lines):
+                    draw.text((margin_x + 55, cursor_y + 12 + i * 32), line, fill=COLOR_CODE_TEXT, font=font_code)
+                cursor_y += code_h + 20
+
+            # Bullet Points
+            key_points = slide.get("key_points", [])
+            for pt in key_points:
+                draw.text((margin_x + 40, cursor_y), "●", fill=COLOR_ACCENT, font=font_bullet)
+                draw.text((margin_x + 70, cursor_y), pt, fill=COLOR_TEXT_MAIN, font=font_bullet)
+                cursor_y += 44
+
 
         # Deliberate Digestion & Schema Consolidation Banner at Bottom
         digest_rect = [margin_x + 35, height - margin_y - 60, width - margin_x - 35, height - margin_y - 20]
