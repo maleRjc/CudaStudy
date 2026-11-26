@@ -139,7 +139,7 @@ class FullBookOrchestrator:
                 scene_f, scene_c = self.manim_engine.generate_code_for_timeline(timeline)
                 raw_manim = self.manim_engine.render_scene(scene_f, scene_c, quality=quality)
                 if raw_manim and raw_manim.exists():
-                    composed_manim = self.composer.compose_final_video(raw_manim, timeline, output_mp4=clip_path)
+                    composed_manim = self.composer.compose_clip_with_audio(raw_manim, audio_path, clip_path, duration)
                     if composed_manim and composed_manim.exists():
                         sub_clips.append(composed_manim)
                         continue
@@ -151,10 +151,19 @@ class FullBookOrchestrator:
             if rendered_clip and rendered_clip.exists():
                 sub_clips.append(rendered_clip)
 
-        # 6. Stitch Sub-Clips into Single Seamless Section Master Video
-        print(f"[*] Step 5: Stitching {len(sub_clips)} clips into Section Video...")
+        # 6. Generate Subtitles & Stitch Sub-Clips into Synchronized Master Video with Burned Subtitles
+        print(f"[*] Step 5: Generating sentence-level subtitles & stitching {len(sub_clips)} clips into Section Video...")
+        srt_path = config.OUTPUT_DIR / "videos" / f"{sec_id}_subtitles.srt"
+        self.composer.generate_srt_subtitles(timeline, srt_path)
+
         section_video_name = f"{sec_id}_final.mp4"
-        final_video = self.composer.concatenate_course_videos(sub_clips, output_filename=section_video_name)
+        final_video = self.composer.concatenate_course_videos(
+            sub_clips,
+            output_filename=section_video_name,
+            srt_path=srt_path,
+            burn_subtitles=True
+        )
+
 
         self._update_status(sec_id, "COMPLETED", {"video": str(final_video), "clips": len(sub_clips)})
         print(f"\n🎉 [Section Completed] Final Video: {final_video}")

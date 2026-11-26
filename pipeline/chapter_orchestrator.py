@@ -98,7 +98,7 @@ class ChapterOrchestrator:
                 scene_f, scene_c = self.manim_engine.generate_code_for_timeline(timeline)
                 raw_manim = self.manim_engine.render_scene(scene_f, scene_c, quality=quality)
                 if raw_manim and raw_manim.exists():
-                    composed_manim = self.composer.compose_final_video(raw_manim, timeline, output_mp4=clip_path)
+                    composed_manim = self.composer.compose_clip_with_audio(raw_manim, audio_path, clip_path, duration)
                     if composed_manim and composed_manim.exists():
                         sub_clips.append(composed_manim)
                         continue
@@ -111,10 +111,19 @@ class ChapterOrchestrator:
                 sub_clips.append(rendered_clip)
 
 
-        # Step 4: Stitch Chapter Sub-Clips into Single Seamless Chapter Master Video
-        print(f"[*] Step 4: Stitching {len(sub_clips)} clips into Chapter Master Video...")
+        # Step 4: Generate Subtitles & Stitch Chapter Sub-Clips into Single Seamless Chapter Master Video
+        print(f"[*] Step 4: Generating subtitles & stitching {len(sub_clips)} clips into Chapter Master Video...")
+        srt_path = config.OUTPUT_DIR / "videos" / f"{concept_id}_subtitles.srt"
+        self.composer.generate_srt_subtitles(timeline, srt_path)
+
         chapter_master_name = f"{concept_id}_chapter_final.mp4"
-        chapter_video = self.composer.concatenate_course_videos(sub_clips, output_filename=chapter_master_name)
+        chapter_video = self.composer.concatenate_course_videos(
+            sub_clips,
+            output_filename=chapter_master_name,
+            srt_path=srt_path,
+            burn_subtitles=True
+        )
+
 
         print(f"\n🎉 [Chapter Finished] Master Chapter Video: {chapter_video}")
         return {

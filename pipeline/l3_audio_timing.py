@@ -47,7 +47,7 @@ class AudioTimingEngine:
 
     async def process_manifest(self, beat_manifest: Dict[str, Any]) -> Dict[str, Any]:
         """Synthesizes all narrations in manifest/deck and builds timeline schedule."""
-        chunk_id = beat_manifest.get("concept_id") or beat_manifest.get("chunk_id", "unnamed_concept")
+        chunk_id = beat_manifest.get("sec_id") or beat_manifest.get("concept_id") or beat_manifest.get("chunk_id", "unnamed_concept")
         slides = beat_manifest.get("slides")
         beats = slides if slides is not None else beat_manifest.get("beats", [])
         print(f"[*] Layer 3: Synthesizing TTS & building Audio-Clock timeline for {chunk_id} ({len(beats)} units)...")
@@ -97,6 +97,7 @@ class AudioTimingEngine:
             print(f"    - Slide {b_id}: Voice {audio_duration}s + Pause {pause_buf}s = Total {total_beat_duration}s (Starts @ {timeline_item['start_time']}s)")
 
         full_timeline = {
+            "sec_id": chunk_id,
             "chunk_id": chunk_id,
             "concept_id": chunk_id,
             "title": beat_manifest.get("topic") or beat_manifest.get("title", ""),
@@ -104,6 +105,7 @@ class AudioTimingEngine:
             "slides": timeline_beats,
             "beats": timeline_beats
         }
+
 
         timeline_path = self.timeline_dir / f"{chunk_id}_timeline.json"
         with open(timeline_path, "w", encoding="utf-8") as f:

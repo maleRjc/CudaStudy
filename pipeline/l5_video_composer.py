@@ -13,6 +13,7 @@ from typing import Dict, Any, List, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import config
+from pipeline.subtitle_engine import SubtitleEngine
 
 
 def format_srt_time(seconds: float) -> str:
@@ -48,24 +49,60 @@ class VideoComposer:
         self.ffmpeg_bin = find_ffmpeg_binary()
         print(f"[*] VideoComposer: Using FFmpeg -> {self.ffmpeg_bin}")
 
-    def generate_srt_subtitles(self, timeline: Dict[str, Any], srt_path: Path):
-        """Generates clean SRT subtitle track from timeline beats."""
-        beats = timeline.get("beats", [])
-        lines = []
+    def generate_srt_subtitles(self, timeline: Dict[str, Any], srt_path: Path) -> Path:
+        """Generates clean, fine-grained sentence-level SRT subtitles from timeline."""
+        return SubtitleEngine.generate_full_srt(timeline, srt_path)
 
-        for idx, b in enumerate(beats, 1):
-            start = b.get("start_time", 0.0)
-            # Subtitle displays during narration speech
-            duration = b.get("audio_duration", 2.0)
-            end = start + duration
-            text = b.get("narration", "")
+    def compose_clip_with_audio(
+        self,
+        video_path: Path,
+        audio_path: Path,
+        output_clip_path: Path,
+        target_duration: float
+    ) -> Optional[Path]:
+        """
+        Muxes a video file (e.g. Manim raw video) with its specific slide narration audio.
+        Ensures exact audio padding with apad so video and audio durations are identical down to milliseconds.
+        """
+        dur_str = f"{target_duration:.3f}"
+        cmd = [
+            str(self.ffmpeg_bin),
+            "-y",
+            "-i", str(video_path),
+            "-i", str(audio_path),
+            "-af", f"apad=whole_dur={dur_str}",
+            "-t", dur_str,
+            "-c:v", "libx264",
+            "-r", "30",
+            "-pix_fmt", "yuv420p",
+            "-c:a", "aac",
+            "-ar", "44100",
+            "-ac", "2",
+            "-b:a", "192k",
+            str(output_clip_path)
+        ]
+        creationflags = 0
+        startupinfo = None
+        if sys.platform == "win32":
+            creationflags = subprocess.CREATE_NO_WINDOW
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            startupinfo.wShowWindow = subprocess.SW_HIDE
 
-            if text:
-                lines.append(f"{idx}\n{format_srt_time(start)} --> {format_srt_time(end)}\n{text}\n")
+        proc = subprocess.run(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            creationflags=creationflags,
+            startupinfo=startupinfo,
+        )
+        if proc.returncode == 0 and output_clip_path.exists():
+            return output_clip_path
+        else:
+            print(f"[!] compose_clip_with_audio failed: {proc.stderr[-300:]}")
+            return None
 
-        with open(srt_path, "w", encoding="utf-8") as f:
-            f.write("\n".join(lines))
-        print(f"[+] Layer 5: Generated Subtitles in {srt_path.name}")
 
     def compose_final_video(self, raw_video_path: Path, timeline: Dict[str, Any], output_mp4: Optional[Path] = None) -> Optional[Path]:
         """Muxes video track and accurately delayed audio streams using FFmpeg."""
@@ -134,24 +171,35 @@ class VideoComposer:
             print(f"[!] FFmpeg composition failed:\n{proc.stderr[-600:]}")
             return None
 
-    def concatenate_course_videos(self, video_paths: List[Path], output_filename: str = "00_cuda_full_course.mp4") -> Optional[Path]:
-        """Concatenates multiple episodic concept videos into a comprehensive, continuous master lecture."""
+    def concatenate_course_videos(
+        self,
+        video_paths: List[Path],
+        output_filename: str = "00_cuda_full_course.mp4",
+        srt_path: Optional[Path] = None,
+        burn_subtitles: bool = True
+    ) -> Optional[Path]:
+        """
+        Concatenates multiple episodic concept videos into a comprehensive, continuous master lecture.
+        Optionally burns synchronized subtitles directly into the final video.
+        """
         valid_videos = [p for p in video_paths if p and Path(p).exists()]
         if not valid_videos:
             print("[!] No valid video files to concatenate.")
             return None
 
-        if len(valid_videos) == 1:
-            return valid_videos[0]
+        master_video_path = self.output_dir / output_filename
+        raw_concat_mp4 = self.output_dir / f"temp_{output_filename}"
 
+        # 1. Write concat list
         concat_list_file = self.output_dir / "concat_list.txt"
         with open(concat_list_file, "w", encoding="utf-8") as f:
             for vp in valid_videos:
-                # Escape backslashes for FFmpeg
                 clean_path = str(vp.resolve()).replace("\\", "/")
                 f.write(f"file '{clean_path}'\n")
 
-        master_video_path = self.output_dir / output_filename
+        # Target for concat step
+        target_concat = raw_concat_mp4 if (burn_subtitles and srt_path and srt_path.exists()) else master_video_path
+
         cmd = [
             str(self.ffmpeg_bin),
             "-y",
@@ -159,7 +207,7 @@ class VideoComposer:
             "-safe", "0",
             "-i", str(concat_list_file),
             "-c", "copy",
-            str(master_video_path)
+            str(target_concat)
         ]
 
         creationflags = 0
@@ -179,12 +227,50 @@ class VideoComposer:
             startupinfo=startupinfo,
         )
 
-        if proc.returncode == 0 and master_video_path.exists():
-            print(f"[🎉] Master Course Video stitched successfully: {master_video_path.name} ({round(master_video_path.stat().st_size / 1024 / 1024, 2)} MB)")
-            return master_video_path
-        else:
+        if proc.returncode != 0 or not target_concat.exists():
             print(f"[!] Concatenation failed: {proc.stderr[-500:]}")
             return None
+
+        # 2. Burn subtitles if requested
+        if burn_subtitles and srt_path and srt_path.exists() and srt_path.stat().st_size > 10:
+            print(f"[*] Burning crisp subtitles from {srt_path.name} into {master_video_path.name}...")
+            # Use relative path in cwd to avoid Windows backslash/colon escaping issues
+            rel_srt = srt_path.name
+            burn_cmd = [
+                str(self.ffmpeg_bin),
+                "-y",
+                "-i", str(raw_concat_mp4),
+                "-vf", f"subtitles={rel_srt}:force_style='FontName=Microsoft YaHei,FontSize=20,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=3,Outline=1,Shadow=0,MarginV=25'",
+                "-c:a", "copy",
+                "-c:v", "libx264",
+                "-pix_fmt", "yuv420p",
+                str(master_video_path)
+            ]
+            burn_proc = subprocess.run(
+                burn_cmd,
+                cwd=str(srt_path.parent),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                creationflags=creationflags,
+                startupinfo=startupinfo,
+            )
+            if burn_proc.returncode == 0 and master_video_path.exists():
+                print(f"[+] Subtitles successfully burned into video!")
+                if raw_concat_mp4.exists():
+                    try:
+                        raw_concat_mp4.unlink()
+                    except Exception:
+                        pass
+            else:
+                print(f"[Warning] Subtitle burning failed, falling back to clean video: {burn_proc.stderr[-300:]}")
+                if raw_concat_mp4.exists():
+                    import shutil
+                    shutil.move(str(raw_concat_mp4), str(master_video_path))
+
+        print(f"[🎉] Master Video ready: {master_video_path.name} ({round(master_video_path.stat().st_size / 1024 / 1024, 2)} MB)")
+        return master_video_path
+
 
 
 if __name__ == "__main__":

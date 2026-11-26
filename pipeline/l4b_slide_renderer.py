@@ -184,21 +184,30 @@ class SlideVideoRenderer:
         return img_path
 
     def create_slide_video_clip(self, slide_img_path: Path, audio_path: Path, output_clip_path: Path, duration: float) -> Optional[Path]:
-        """Combines single slide image + speech audio into a synchronized MP4 video clip."""
+        """
+        Combines single slide image + speech audio into a synchronized MP4 video clip.
+        Pads audio stream with silence using apad filter to ensure audio and video durations match 100%.
+        """
+        dur_str = f"{duration:.3f}"
         cmd = [
             str(self.ffmpeg_bin),
             "-y",
             "-loop", "1",
             "-i", str(slide_img_path),
             "-i", str(audio_path),
+            "-af", f"apad=whole_dur={dur_str}",
+            "-t", dur_str,
             "-c:v", "libx264",
             "-tune", "stillimage",
-            "-c:a", "aac",
-            "-b:a", "192k",
+            "-r", "30",
             "-pix_fmt", "yuv420p",
-            "-t", str(duration),
+            "-c:a", "aac",
+            "-ar", "44100",
+            "-ac", "2",
+            "-b:a", "192k",
             str(output_clip_path)
         ]
+
 
         creationflags = 0
         startupinfo = None

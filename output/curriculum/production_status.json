@@ -1,0 +1,12 @@
+{
+  "sec_001_introduction": {
+    "status": "IN_PROGRESS",
+    "updated_at": "2026-11-26 09:25:31"
+  },
+  "sec_002_programming_model": {
+    "status": "COMPLETED",
+    "updated_at": "2026-11-26 09:34:14",
+    "video": "E:\\CudaStudy\\output\\videos\\sec_002_programming_model_final.mp4",
+    "clips": 7
+  }
+}
