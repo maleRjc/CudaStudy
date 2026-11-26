@@ -57,40 +57,57 @@ class SlideVideoRenderer:
         self.ffmpeg_bin = config.BASE_DIR / ".venv" / "Scripts" / "ffmpeg.exe"
 
     def render_slide_image(self, slide: Dict[str, Any], topic: str, width: int = 1280, height: int = 720) -> Path:
-        """Draws a clean, professional slide card image."""
+        """
+        Draws a clean, professional slide card image with a dedicated subtitle safe zone.
+        No content ever enters the bottom 88px reserved exclusively for burnt-in subtitles.
+        """
         img = Image.new("RGB", (width, height), COLOR_BG)
         draw = ImageDraw.Draw(img)
 
-        # Main Card Container
-        margin_x, margin_y = 60, 45
-        card_rect = [margin_x, margin_y, width - margin_x, height - margin_y]
-        draw.rounded_rectangle(card_rect, radius=16, fill=COLOR_CARD, outline=COLOR_BORDER, width=2)
+        # 1. Main Slide Content Container (Strictly bounded above y=630)
+        margin_x = 50
+        card_rect = [margin_x, 15, width - margin_x, 626]
+        draw.rounded_rectangle(card_rect, radius=14, fill=COLOR_CARD, outline=COLOR_BORDER, width=2)
 
-        # Header Title & Badge
-        font_badge = get_system_font(18, bold=True)
-        font_title = get_system_font(30, bold=True)
-        font_topic = get_system_font(18, bold=False)
-        font_bullet = get_system_font(22, bold=False)
-        font_code = get_system_font(20, bold=True)
+        # 2. Dedicated Subtitle Safe Strip at Bottom (y=632 to 720)
+        draw.rectangle([0, 632, width, height], fill=(9, 12, 16))
+        draw.line([0, 632, width, 632], fill=(35, 42, 54), width=1)
+
+        # Fonts
+        font_badge = get_system_font(15, bold=True)
+        font_title = get_system_font(26, bold=True)
+        font_topic = get_system_font(15, bold=False)
+        font_digest = get_system_font(13, bold=False)
+        font_bullet = get_system_font(19, bold=False)
+        font_code = get_system_font(17, bold=True)
 
         slide_id = slide.get("slide_id", 1)
         s_type = slide.get("slide_type", "概念精讲")
         title = slide.get("title", f"Slide {slide_id}")
 
+        # Top Badge
         badge_text = f"  Slide {slide_id} · {s_type}  "
-        draw.rounded_rectangle([margin_x + 35, margin_y + 30, margin_x + 35 + len(badge_text) * 11, margin_y + 60], radius=12, fill=(28, 45, 15), outline=COLOR_ACCENT, width=1)
-        draw.text((margin_x + 42, margin_y + 35), badge_text, fill=COLOR_ACCENT, font=font_badge)
+        badge_w = len(badge_text) * 9 + 10
+        draw.rounded_rectangle([margin_x + 30, 26, margin_x + 30 + badge_w, 52], radius=10, fill=(28, 45, 15), outline=COLOR_ACCENT, width=1)
+        draw.text((margin_x + 36, 31), badge_text, fill=COLOR_ACCENT, font=font_badge)
 
-        draw.text((margin_x + 35, margin_y + 75), title, fill=COLOR_BLUE, font=font_title)
-        draw.text((margin_x + 35, margin_y + 125), f"《CUDA C++ Programming Guide》专题：{topic}", fill=COLOR_TEXT_MUTED, font=font_topic)
+        # Title & Topic
+        draw.text((margin_x + 30, 58), title, fill=COLOR_BLUE, font=font_title)
+        draw.text((margin_x + 30, 96), f"《CUDA C++ Programming Guide》专题：{topic}", fill=COLOR_TEXT_MUTED, font=font_topic)
+
+        # Compact Schema & Cognitive Digestion Pill below header
+        digest_pill = [margin_x + 30, 122, width - margin_x - 30, 150]
+        draw.rounded_rectangle(digest_pill, radius=6, fill=(15, 23, 42), outline=(56, 189, 248), width=1)
+        digest_hint = "💡 [认知图式沉淀] 请对照板书理解核心心智模型，把握其与 CPU 串行执行的本质区别"
+        draw.text((margin_x + 45, 128), digest_hint, fill=(147, 197, 253), font=font_digest)
 
         # Divider
-        draw.line([margin_x + 35, margin_y + 155, width - margin_x - 35, margin_y + 155], fill=COLOR_BORDER, width=2)
+        draw.line([margin_x + 30, 158, width - margin_x - 30, 158], fill=COLOR_BORDER, width=1)
 
-        # Check Multi-Modal Slide Types
-        cursor_y = margin_y + 170
-        card_w = width - 2 * margin_x - 70
-        card_h = height - margin_y - 250
+        # 3. Middle Visual Area (y=168 to 618)
+        cursor_y = 168
+        card_w = width - 2 * margin_x - 60
+        card_h = 440
 
         visual = slide.get("visual_spec", {})
         special_card = None
@@ -152,36 +169,29 @@ class SlideVideoRenderer:
             )
 
         if special_card:
-            img.paste(special_card, (margin_x + 35, cursor_y), special_card)
+            img.paste(special_card, (margin_x + 30, cursor_y), special_card)
         else:
             # Code Badge if exists
             code = visual.get("code_badge", "")
             if code:
                 code_lines = [c for c in code.split("\n") if c.strip()][:4]
-                code_h = len(code_lines) * 32 + 25
-                draw.rounded_rectangle([margin_x + 35, cursor_y, width - margin_x - 35, cursor_y + code_h], radius=10, fill=COLOR_CODE_BG, outline=COLOR_BORDER, width=1)
+                code_h = len(code_lines) * 30 + 20
+                draw.rounded_rectangle([margin_x + 30, cursor_y, width - margin_x - 30, cursor_y + code_h], radius=10, fill=COLOR_CODE_BG, outline=COLOR_BORDER, width=1)
                 for i, line in enumerate(code_lines):
-                    draw.text((margin_x + 55, cursor_y + 12 + i * 32), line, fill=COLOR_CODE_TEXT, font=font_code)
+                    draw.text((margin_x + 48, cursor_y + 10 + i * 30), line, fill=COLOR_CODE_TEXT, font=font_code)
                 cursor_y += code_h + 20
 
             # Bullet Points
             key_points = slide.get("key_points", [])
             for pt in key_points:
-                draw.text((margin_x + 40, cursor_y), "●", fill=COLOR_ACCENT, font=font_bullet)
-                draw.text((margin_x + 70, cursor_y), pt, fill=COLOR_TEXT_MAIN, font=font_bullet)
-                cursor_y += 44
-
-
-        # Deliberate Digestion & Schema Consolidation Banner at Bottom
-        digest_rect = [margin_x + 35, height - margin_y - 60, width - margin_x - 35, height - margin_y - 20]
-        draw.rounded_rectangle(digest_rect, radius=8, fill=(15, 23, 42), outline=(56, 189, 248), width=1)
-        font_digest = get_system_font(15, bold=False)
-        digest_hint = "💡 [认知沉淀 · 消化思考] 请对照板书理解核心心智模型，思考其与 CPU 串行设计的本质区别"
-        draw.text((margin_x + 55, height - margin_y - 48), digest_hint, fill=(147, 197, 253), font=font_digest)
+                draw.text((margin_x + 35, cursor_y), "●", fill=COLOR_ACCENT, font=font_bullet)
+                draw.text((margin_x + 65, cursor_y), pt, fill=COLOR_TEXT_MAIN, font=font_bullet)
+                cursor_y += 42
 
         img_path = self.output_dir / f"slide_{slide_id}.png"
         img.save(img_path)
         return img_path
+
 
     def create_slide_video_clip(self, slide_img_path: Path, audio_path: Path, output_clip_path: Path, duration: float) -> Optional[Path]:
         """

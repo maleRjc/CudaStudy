@@ -88,7 +88,7 @@ class CudaGlobalIdScene(CUDAThemeScene):
         grid.move_to(UP * 0.2 + LEFT * 3.0)
 
         memory = MemoryLane(num_slots=8, slot_width=0.85)
-        memory.move_to(DOWN * 2.5)
+        memory.move_to(DOWN * 1.8)
 
         self.play(FadeIn(grid), FadeIn(memory), run_time={b1_action_time} * 0.6)
 
@@ -250,7 +250,7 @@ class CudaBankConflictScene(CUDAThemeScene):
         for i, b in enumerate(banks):
             b.addr_label.become(Text(f"Bank {{i}}", font_size=FONT_BADGE_SIZE, color=TEXT_SECONDARY).next_to(b.box, DOWN, buff=0.1))
             b.set_value(f"B{{i}}")
-        banks.move_to(DOWN * 2.0)
+        banks.move_to(DOWN * 1.6)
         b_label = Text("Shared Memory Banks (32路并发物理模块)", font_size=FONT_SUBTITLE_SIZE - 4, color=TEXT_SECONDARY).next_to(banks, UP, buff=0.2)
 
         self.play(FadeIn(threads), FadeIn(t_label), FadeIn(banks), FadeIn(b_label), run_time={b1_action_time} * 0.6)
@@ -337,11 +337,11 @@ class CudaCoalescedScene(CUDAThemeScene):
         threads.move_to(UP * 0.5)
 
         bus_rect = RoundedRectangle(corner_radius=0.15, width=6.5, height=0.6, color=NVIDIA_GREEN, fill_color=CARD_BG, fill_opacity=0.9)
-        bus_rect.move_to(DOWN * 0.6)
+        bus_rect.move_to(DOWN * 0.4)
         bus_label = Text("GPU 显存总线事务 (128-Byte Transaction)", font_size=FONT_BADGE_SIZE, color=NVIDIA_GREEN).move_to(bus_rect.get_center())
 
         slots = VGroup(*[MemorySlot(address_idx=i, width=0.85, height=0.85) for i in range(6)]).arrange(RIGHT, buff=0.2)
-        slots.move_to(DOWN * 2.2)
+        slots.move_to(DOWN * 1.7)
 
         self.play(FadeIn(threads), FadeIn(bus_rect), FadeIn(bus_label), FadeIn(slots), run_time={b1_action_time} * 0.6)
 
@@ -428,7 +428,7 @@ class CudaAtomicScene(CUDAThemeScene):
         t0 = ThreadItem(block_id=0, thread_id=0).move_to(UP * 0.4 + LEFT * 2.5)
         t1 = ThreadItem(block_id=0, thread_id=1).move_to(UP * 0.4 + RIGHT * 2.5)
 
-        counter_box = Square(side_length=1.4, color=MEMORY_BORDER, fill_color=CARD_BG, fill_opacity=0.9).move_to(DOWN * 1.5)
+        counter_box = Square(side_length=1.4, color=MEMORY_BORDER, fill_color=CARD_BG, fill_opacity=0.9).move_to(DOWN * 1.3)
         counter_lbl = Text("Counter: 0", font_size=FONT_SUBTITLE_SIZE, color=TEXT_PRIMARY, weight=BOLD).move_to(counter_box.get_center())
         c_desc = Text("Global Memory 共享累加器", font_size=FONT_BADGE_SIZE, color=TEXT_SECONDARY).next_to(counter_box, DOWN, buff=0.15)
 
@@ -502,21 +502,21 @@ class CudaSyncthreadsScene(CUDAThemeScene):
         threads.move_to(UP * 0.5)
 
         barrier = DashedLine(start=LEFT * 4.5, end=RIGHT * 4.5, color=THREAD_CONFLICT, dash_length=0.2, stroke_width=4)
-        barrier.move_to(DOWN * 1.0)
+        barrier.move_to(DOWN * 0.8)
         barrier_lbl = Text("同步栅栏 (__syncthreads Barrier)", font_size=FONT_BADGE_SIZE, color=THREAD_CONFLICT).next_to(barrier, UP, buff=0.15)
 
         self.play(FadeIn(threads), FadeIn(barrier), FadeIn(barrier_lbl), run_time={b1_action_time} * 0.6)
 
         self.play(
-            threads[0].animate.move_to(DOWN * 0.8 + LEFT * 1.5),
-            threads[2].animate.move_to(DOWN * 0.8 + RIGHT * 1.5),
+            threads[0].animate.move_to(DOWN * 0.6 + LEFT * 1.5),
+            threads[2].animate.move_to(DOWN * 0.6 + RIGHT * 1.5),
             threads[1].animate.move_to(UP * 1.5 + LEFT * 0.5),
             threads[3].animate.move_to(UP * 1.5 + RIGHT * 0.5),
             run_time={b2_action_time} * 0.5
         )
 
         deadlock_box = Text("! 硬件永久死锁 (Deadlock): 未走分支线程永不到达 !", font_size=FONT_SUBTITLE_SIZE - 2, color=THREAD_CONFLICT, weight=BOLD)
-        deadlock_box.next_to(barrier, DOWN, buff=0.3)
+        deadlock_box.next_to(barrier, DOWN, buff=0.25)
         self.play(FadeIn(deadlock_box), run_time=0.6)
         self.wait({b2_pause})
 
@@ -531,7 +531,7 @@ class CudaSyncthreadsScene(CUDAThemeScene):
         barrier_lbl.become(Text("全员集合 · 屏障平稳通过", font_size=FONT_BADGE_SIZE, color=NVIDIA_GREEN).next_to(barrier, UP, buff=0.15))
 
         self.play(
-            threads.animate.arrange(RIGHT, buff=1.0).move_to(DOWN * 2.0),
+            threads.animate.arrange(RIGHT, buff=1.0).move_to(DOWN * 1.8),
             *[t.circle.animate.set_color(THREAD_RESOLVED) for t in threads],
             run_time={b3_action_time} * 0.7
         )
@@ -560,9 +560,9 @@ class CudaTiledGemmScene(CUDAThemeScene):
         code_badge = self.create_code_badge("C[row][col] += A[row][k] * B[k][col]; // 原始显存暴力访存", position=UP * 2.0)
         self.play(FadeIn(header), FadeIn(code_badge), run_time={b1_action_time} * 0.4)
 
-        mat_a = Square(side_length=2.2, color=BLUE_D, fill_color=CARD_BG, fill_opacity=0.8).move_to(LEFT * 3.5 + DOWN * 0.5)
-        mat_b = Square(side_length=2.2, color=BLUE_E, fill_color=CARD_BG, fill_opacity=0.8).move_to(RIGHT * 3.5 + DOWN * 0.5)
-        mat_c = Square(side_length=2.2, color=NVIDIA_GREEN, fill_color=CARD_BG, fill_opacity=0.8).move_to(DOWN * 0.5)
+        mat_a = Square(side_length=2.0, color=BLUE_D, fill_color=CARD_BG, fill_opacity=0.8).move_to(LEFT * 3.5 + UP * 0.1)
+        mat_b = Square(side_length=2.0, color=BLUE_E, fill_color=CARD_BG, fill_opacity=0.8).move_to(RIGHT * 3.5 + UP * 0.1)
+        mat_c = Square(side_length=2.0, color=NVIDIA_GREEN, fill_color=CARD_BG, fill_opacity=0.8).move_to(UP * 0.1)
 
         lbl_a = Text("Matrix A (Global)", font_size=FONT_BADGE_SIZE, color=TEXT_SECONDARY).next_to(mat_a, UP, buff=0.15)
         lbl_b = Text("Matrix B (Global)", font_size=FONT_BADGE_SIZE, color=TEXT_SECONDARY).next_to(mat_b, UP, buff=0.15)
@@ -579,10 +579,10 @@ class CudaTiledGemmScene(CUDAThemeScene):
         tile_badge = self.create_code_badge("__shared__ float s_A[TILE][TILE], s_B[TILE][TILE];", position=UP * 2.0)
         self.play(FadeOut(code_badge), FadeIn(tile_badge), run_time=0.5)
 
-        tile_a = Square(side_length=0.9, color=YELLOW, fill_color=YELLOW, fill_opacity=0.3).move_to(mat_a.get_center())
-        tile_b = Square(side_length=0.9, color=YELLOW, fill_color=YELLOW, fill_opacity=0.3).move_to(mat_b.get_center())
+        tile_a = Square(side_length=0.8, color=YELLOW, fill_color=YELLOW, fill_opacity=0.3).move_to(mat_a.get_center())
+        tile_b = Square(side_length=0.8, color=YELLOW, fill_color=YELLOW, fill_opacity=0.3).move_to(mat_b.get_center())
 
-        smem_box = RoundedRectangle(corner_radius=0.15, width=4.5, height=1.1, color=YELLOW, fill_color=CARD_BG, fill_opacity=0.9).move_to(DOWN * 2.5)
+        smem_box = RoundedRectangle(corner_radius=0.15, width=4.5, height=0.9, color=YELLOW, fill_color=CARD_BG, fill_opacity=0.9).move_to(DOWN * 1.6)
         smem_lbl = Text("SM 片上高速缓存 (Shared Memory Tiles)", font_size=FONT_BADGE_SIZE, color=YELLOW).move_to(smem_box.get_center())
 
         self.play(
@@ -595,7 +595,7 @@ class CudaTiledGemmScene(CUDAThemeScene):
         flow_b = Arrow(start=tile_b.get_bottom(), end=smem_box.get_right(), color=YELLOW, buff=0.1)
 
         self.play(GrowArrow(flow_a), GrowArrow(flow_b), run_time=0.6)
-        sync_txt = Text("__syncthreads(); // 分块协作搬运完成", font_size=FONT_BADGE_SIZE + 2, color=NVIDIA_GREEN, weight=BOLD).next_to(smem_box, DOWN, buff=0.2)
+        sync_txt = Text("__syncthreads(); // 分块协作搬运完成", font_size=FONT_BADGE_SIZE + 2, color=NVIDIA_GREEN, weight=BOLD).next_to(smem_box, DOWN, buff=0.15)
         self.play(FadeIn(sync_txt), run_time=0.5)
         self.wait({b2_pause})
 
@@ -636,7 +636,7 @@ class CudaStreamOverlapScene(CUDAThemeScene):
         code_badge = self.create_code_badge("cudaMemcpy(H2D); kernel<<<...>>>(); cudaMemcpy(D2H); // 串行停滞", position=UP * 2.0)
         self.play(FadeIn(header), FadeIn(code_badge), run_time={b1_action_time} * 0.4)
 
-        time_axis = Arrow(start=LEFT * 5.0, end=RIGHT * 5.0, color=TEXT_SECONDARY).move_to(DOWN * 2.3)
+        time_axis = Arrow(start=LEFT * 5.0, end=RIGHT * 5.0, color=TEXT_SECONDARY).move_to(DOWN * 1.8)
         time_lbl = Text("时间轴 (Timeline)", font_size=FONT_BADGE_SIZE, color=TEXT_SECONDARY).next_to(time_axis, DOWN, buff=0.1)
 
         b_copy1 = Rectangle(width=2.5, height=0.7, color=BLUE, fill_color=BLUE, fill_opacity=0.6).move_to(LEFT * 3.5 + UP * 0.4)
@@ -670,10 +670,10 @@ class CudaStreamOverlapScene(CUDAThemeScene):
         s1_copy = Rectangle(width=2.2, height=0.6, color=BLUE, fill_color=BLUE, fill_opacity=0.7).move_to(LEFT * 2.5 + UP * 0.6)
         s1_lbl = Text("Stream 0: Copy", font_size=FONT_BADGE_SIZE - 2, color=TEXT_PRIMARY).move_to(s1_copy.get_center())
 
-        s2_kern = Rectangle(width=2.2, height=0.6, color=NVIDIA_GREEN, fill_color=NVIDIA_GREEN, fill_opacity=0.7).move_to(LEFT * 0.5 + DOWN * 0.3)
+        s2_kern = Rectangle(width=2.2, height=0.6, color=NVIDIA_GREEN, fill_color=NVIDIA_GREEN, fill_opacity=0.7).move_to(LEFT * 0.5 + DOWN * 0.2)
         s2_lbl = Text("Stream 1: Kernel", font_size=FONT_BADGE_SIZE - 2, color=TEXT_PRIMARY).move_to(s2_kern.get_center())
 
-        s3_copy = Rectangle(width=2.2, height=0.6, color=PURPLE, fill_color=PURPLE, fill_opacity=0.7).move_to(RIGHT * 1.5 + DOWN * 1.2)
+        s3_copy = Rectangle(width=2.2, height=0.6, color=PURPLE, fill_color=PURPLE, fill_opacity=0.7).move_to(RIGHT * 1.5 + DOWN * 0.9)
         s3_lbl = Text("Stream 2: Next Copy", font_size=FONT_BADGE_SIZE - 2, color=TEXT_PRIMARY).move_to(s3_copy.get_center())
 
         self.play(
@@ -683,7 +683,7 @@ class CudaStreamOverlapScene(CUDAThemeScene):
             run_time={b2_action_time} * 0.7
         )
 
-        overlap_rect = DashedVMobject(Rectangle(width=3.5, height=2.4, color=YELLOW)).move_to(LEFT * 0.5 + DOWN * 0.3)
+        overlap_rect = DashedVMobject(Rectangle(width=3.5, height=2.2, color=YELLOW)).move_to(LEFT * 0.5 + DOWN * 0.2)
         overlap_lbl = Text("PCIe 传输与 SM 算力 100% 完美重叠", font_size=FONT_BADGE_SIZE, color=YELLOW, weight=BOLD).next_to(overlap_rect, UP, buff=0.15)
 
         self.play(Create(overlap_rect), FadeIn(overlap_lbl), run_time=0.8)

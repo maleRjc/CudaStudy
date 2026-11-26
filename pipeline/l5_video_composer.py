@@ -240,7 +240,7 @@ class VideoComposer:
                 str(self.ffmpeg_bin),
                 "-y",
                 "-i", str(raw_concat_mp4),
-                "-vf", f"subtitles={rel_srt}:force_style='FontName=Microsoft YaHei,FontSize=20,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=3,Outline=1,Shadow=0,MarginV=25'",
+                "-vf", f"subtitles={rel_srt}:force_style='FontName=Microsoft YaHei,FontSize=18,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=3,BackColour=&H50000000,Outline=1,Shadow=0,MarginV=14'",
                 "-c:a", "copy",
                 "-c:v", "libx264",
                 "-pix_fmt", "yuv420p",

@@ -26,9 +26,10 @@ TEXT_SECONDARY = "#94A3B8"
 TEXT_CODE = "#38BDF8"
 
 # Screen Layout Zones (Manim Standard Camera: [-7.11, 7.11] x [-4.0, 4.0])
+# Reserve y < -2.7 exclusively for burned-in subtitles strip
 ZONE_TOP_Y = 2.8
 ZONE_CENTER_Y = 0.3
-ZONE_BOTTOM_Y = -2.5
+ZONE_BOTTOM_Y = -1.8
 
 # Standard Font & Text Sizes
 FONT_TITLE_SIZE = 36
