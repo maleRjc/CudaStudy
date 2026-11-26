@@ -322,7 +322,9 @@ class DeepPedagogicalDeckGenerator:
 
 
         return {
+            "chunk_id": sec_id,
             "sec_id": sec_id,
+            "concept_id": sec_id,
             "topic": title,
             "curriculum_index": section_data.get("index", 1),
             "page_range": f"P{section_data.get('start_page')}-P{section_data.get('end_page')}",
@@ -385,11 +387,18 @@ class DeepPedagogicalDeckGenerator:
         }
 
         try:
+            masked = (self.api_key[:6] + "..." + self.api_key[-4:]) if len(self.api_key) > 10 else "***"
+            print(f"[*] [DeepSeek Deck] 📡 正在调用 DeepSeek 生成定制 PPT 讲稿 (Key: {masked}, 目标: {section_data.get('title')})...")
             resp = requests.post(url, headers=headers, json=payload, timeout=60)
             if resp.status_code == 200:
+                print(f"[+] [DeepSeek Deck] ✅ DeepSeek 讲稿生成成功 (HTTP 200)！")
                 data = resp.json()
                 content = data["choices"][0]["message"]["content"]
                 return json.loads(content)
+            elif resp.status_code == 401:
+                print(f"[!] [DeepSeek Deck] ❌ API 认证失败 (HTTP 401: Invalid Key)！自动启用高保真内置算法引擎生成。")
+            else:
+                print(f"[!] [DeepSeek Deck] ⚠️ API 返回状态码 {resp.status_code}，自动启用内置算法引擎。")
         except Exception as e:
             print(f"[Warning] DeepSeek Deck builder error: {e}")
         return None

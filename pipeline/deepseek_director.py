@@ -611,10 +611,39 @@ class DeepSeekDirector:
         self.base_url = (base_url or config.DEEPSEEK_BASE_URL).rstrip("/")
         self.model = model or config.DEEPSEEK_MODEL
 
+    @staticmethod
+    def test_api_key(api_key: str, base_url: str = None, model: str = None) -> Tuple[bool, str]:
+        """Tests whether the given DeepSeek API key is valid and responsive."""
+        if not api_key or not api_key.strip():
+            return False, "API Key 为空，未配置。"
+        url = (base_url or config.DEEPSEEK_BASE_URL).rstrip("/") + "/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {api_key.strip()}",
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "model": model or config.DEEPSEEK_MODEL,
+            "messages": [{"role": "user", "content": "ping"}],
+            "max_tokens": 10
+        }
+        try:
+            r = requests.post(url, headers=headers, json=payload, timeout=12)
+            if r.status_code == 200:
+                return True, "✅ DeepSeek API Key 验证通过！模型连接与响应正常。"
+            elif r.status_code == 401:
+                return False, f"❌ 认证失败 (HTTP 401)：当前 API Key 无效或已过期。\n{r.text}"
+            else:
+                return False, f"⚠️ API 返回状态码 {r.status_code}：{r.text[:200]}"
+        except Exception as e:
+            return False, f"❌ 网络连接异常：{str(e)}"
+
     def _call_deepseek_api(self, system_prompt: str, user_prompt: str, json_mode: bool = True) -> Optional[Dict[str, Any]]:
-        """Invokes DeepSeek API with error handling and fallback."""
+        """Invokes DeepSeek API with error handling, diagnostic reporting and fallback."""
         if not self.api_key or "sk-" not in self.api_key:
             return None
+
+        masked_key = (self.api_key[:6] + "..." + self.api_key[-4:]) if len(self.api_key) > 10 else "***"
+        print(f"[*] [DeepSeek AI] 📡 正在调用 DeepSeek API (模型: {self.model}, Key: {masked_key})...")
 
         url = f"{self.base_url}/chat/completions"
         headers = {
@@ -636,16 +665,23 @@ class DeepSeekDirector:
         try:
             resp = requests.post(url, headers=headers, json=payload, timeout=25)
             if resp.status_code == 200:
+                print(f"[+] [DeepSeek AI] ✅ API 调用成功 (HTTP 200)！成功由 DeepSeek 智能模型产出内容。")
                 data = resp.json()
                 content = data["choices"][0]["message"]["content"].strip()
                 if json_mode:
                     return json.loads(content)
                 return {"raw_text": content}
+            elif resp.status_code == 401:
+                print(f"[!] [DeepSeek AI] ❌ API Key 认证失败 (HTTP 401: Invalid API Key)！")
+                print(f"    当前使用的 Key: {masked_key} 无效或已过期。")
+                print(f"    【智能回退】系统已自动激活《实施文档》内置的 30 集金标专家知识库，确保生成继续进行。")
+                return None
             else:
-                print(f"[DeepSeekDirector] API returned status {resp.status_code}: {resp.text[:200]}")
+                print(f"[!] [DeepSeek AI] ⚠️ API 返回异常状态码 {resp.status_code}: {resp.text[:150]}")
+                print(f"    【智能回退】系统已自动激活内置专家知识库。")
                 return None
         except Exception as e:
-            print(f"[DeepSeekDirector] Request exception: {e}")
+            print(f"[!] [DeepSeek AI] 网络请求异常: {e}，自动启用本地专家知识库。")
             return None
 
     def get_full_30_episodes_curriculum(self) -> List[Dict[str, Any]]:

@@ -162,10 +162,16 @@ class CudaStudioApp(ctk.CTk):
         sec2_lbl.pack(anchor="w", padx=15, pady=(10, 8))
 
         ctk.CTkLabel(left_panel, text="DeepSeek API Key (可选，留空使用内置金标分镜):", font=ctk.CTkFont(size=12), text_color=COLOR_TEXT_MUTED).pack(anchor="w", padx=15)
-        self.api_key_entry = ctk.CTkEntry(left_panel, height=32, show="•", placeholder_text="sk-...", font=ctk.CTkFont(size=12))
+        key_row = ctk.CTkFrame(left_panel, fg_color="transparent")
+        key_row.pack(fill="x", padx=15, pady=(2, 8))
+
+        self.api_key_entry = ctk.CTkEntry(key_row, height=32, show="•", placeholder_text="sk-...", font=ctk.CTkFont(size=12))
         if config.DEEPSEEK_API_KEY:
             self.api_key_entry.insert(0, config.DEEPSEEK_API_KEY)
-        self.api_key_entry.pack(fill="x", padx=15, pady=(2, 8))
+        self.api_key_entry.pack(side="left", fill="x", expand=True, padx=(0, 8))
+
+        btn_test_key = ctk.CTkButton(key_row, text="测试连接", width=70, height=32, command=self._test_api_key)
+        btn_test_key.pack(side="right")
 
         # 3. Audio & Voiceover Settings
         sec3_lbl = ctk.CTkLabel(left_panel, text="🎙️ 语音旁白与音色设定", font=ctk.CTkFont(family="Microsoft YaHei", size=15, weight="bold"), text_color="#FFFFFF")
@@ -336,6 +342,15 @@ class CudaStudioApp(ctk.CTk):
             self.btn_play.configure(state="normal")
             self.btn_srt.configure(state="normal")
             self._log("[系统提示] 检测到已存在历史成片，可随时点击'打开已生成视频'播放。\n")
+
+    def _test_api_key(self):
+        key = self.api_key_entry.get().strip()
+        self._log(f"\n[*] 正在连通 DeepSeek 官方云端验证 API Key 有效性...")
+        def _bg_test():
+            from pipeline.deepseek_director import DeepSeekDirector
+            ok, msg = DeepSeekDirector.test_api_key(key)
+            self.log_queue.put(("log", f"\n{msg}\n"))
+        threading.Thread(target=_bg_test, daemon=True).start()
 
     def _browse_pdf(self):
         filename = filedialog.askopenfilename(

@@ -28,9 +28,31 @@ class AudioTimingEngine:
         self.timeline_dir.mkdir(parents=True, exist_ok=True)
 
     async def _synthesize_clip(self, text: str, output_path: Path):
-        """Asynchronously synthesizes an audio clip using edge-tts."""
-        communicate = edge_tts.Communicate(text=text, voice=self.voice, rate=self.rate, volume=self.volume)
-        await communicate.save(str(output_path))
+        """Asynchronously synthesizes an audio clip using edge-tts with resilient retry and fallback."""
+        if output_path.exists() and output_path.stat().st_size > 1000:
+            return
+
+        max_retries = 4
+        for attempt in range(1, max_retries + 1):
+            try:
+                communicate = edge_tts.Communicate(text=text, voice=self.voice, rate=self.rate, volume=self.volume)
+                await communicate.save(str(output_path))
+                if output_path.exists() and output_path.stat().st_size > 500:
+                    return
+            except Exception as e:
+                print(f"[Warning] Edge-TTS attempt {attempt}/{max_retries} failed ({e}). Retrying in {attempt * 2}s...")
+                await asyncio.sleep(2.0 * attempt)
+
+        # Fallback: synthesize silent placeholder audio via FFmpeg to prevent overnight batch crash
+        print(f"[!] Edge-TTS network unreachable for '{output_path.name}'. Generating fallback audio via FFmpeg...")
+        est_sec = max(round(len(text) / 4.5, 2), 3.0)
+        try:
+            subprocess.run([
+                "ffmpeg", "-y", "-f", "lavfi", "-i", "anullsrc=r=24000:cl=mono",
+                "-t", str(est_sec), "-c:a", "libmp3lame", str(output_path)
+            ], capture_output=True, check=True)
+        except Exception as e:
+            print(f"[!] Fallback FFmpeg audio error: {e}")
 
     def get_audio_duration(self, audio_path: Path) -> float:
         """Reads exact audio duration in seconds using PyAV."""

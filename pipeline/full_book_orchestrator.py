@@ -104,6 +104,9 @@ class FullBookOrchestrator:
         # 2. Generate comprehensive PPT lecture deck
         print(f"[*] Step 2: Synthesizing deep pedagogical PPT lecture deck...")
         deck = self.deck_gen.generate_deck_from_section(section_data)
+        deck["sec_id"] = sec_id
+        deck["chunk_id"] = sec_id
+        deck["concept_id"] = sec_id
         topic = deck.get("topic", sec_title)
         slides = deck.get("slides", [])
 
