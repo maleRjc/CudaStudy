@@ -15,7 +15,7 @@ class CudaGlobalIdScene(CUDAThemeScene):
         header = self.create_header("CUDA 全局索引映射", "CPU 串行循环思维 vs GPU 空间升维")
         code_badge = self.create_code_badge("int idx = threadIdx.x;  // 隐患：单块正常，多块冲突", position=UP * 2.0)
         
-        self.play(FadeIn(header), FadeIn(code_badge), run_time=38.78 * 0.4)
+        self.play(FadeIn(header), FadeIn(code_badge), run_time=45.65 * 0.4)
 
         grid = ThreadGrid(num_blocks=1, threads_per_block=4, block_spacing=0.8)
         grid.move_to(UP * 0.2 + LEFT * 3.0)
@@ -23,7 +23,7 @@ class CudaGlobalIdScene(CUDAThemeScene):
         memory = MemoryLane(num_slots=8, slot_width=0.85)
         memory.move_to(DOWN * 2.5)
 
-        self.play(FadeIn(grid), FadeIn(memory), run_time=38.78 * 0.6)
+        self.play(FadeIn(grid), FadeIn(memory), run_time=45.65 * 0.6)
 
         t0 = grid.get_thread(0, 0)
         arrow_t0 = Arrow(start=t0.circle.get_bottom(), end=memory.get_slot(0).box.get_top(), color=THREAD_DEFAULT, buff=0.1)
@@ -38,7 +38,7 @@ class CudaGlobalIdScene(CUDAThemeScene):
         self.play(
             ReplacementTransform(grid, new_grid),
             FadeOut(arrow_t0),
-            run_time=167.4 * 0.4
+            run_time=207.46 * 0.4
         )
 
         b0_t0 = new_grid.get_thread(0, 0)
@@ -52,14 +52,14 @@ class CudaGlobalIdScene(CUDAThemeScene):
             GrowArrow(arrow_b1),
             b0_t0.circle.animate.set_color(THREAD_CONFLICT),
             b1_t0.circle.animate.set_color(THREAD_CONFLICT),
-            run_time=167.4 * 0.6
+            run_time=207.46 * 0.6
         )
 
         memory.get_slot(0).flash_collision()
         warning = Text("! 致命物理地址覆写冲突 !", font_size=FONT_SUBTITLE_SIZE - 2, color=THREAD_CONFLICT, weight=BOLD)
         warning.next_to(code_badge, DOWN, buff=0.2)
         self.play(FadeIn(warning), run_time=0.5)
-        self.wait(14.0)
+        self.wait(17.5)
 
         aha_formula = self.create_code_badge("int idx = blockIdx.x * blockDim.x + threadIdx.x;", position=UP * 2.0)
         self.play(
@@ -82,6 +82,6 @@ class CudaGlobalIdScene(CUDAThemeScene):
 
         self.play(
             LaggedStart(*[GrowArrow(a) for a in resolved_arrows], lag_ratio=0.08),
-            run_time=36.17 * 0.7
+            run_time=40.7 * 0.7
         )
         self.deliberate_pause(3.5)

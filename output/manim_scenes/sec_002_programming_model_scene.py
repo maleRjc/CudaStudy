@@ -21,7 +21,7 @@ class CudaGlobalIdScene(CUDAThemeScene):
         grid.move_to(UP * 0.2 + LEFT * 3.0)
 
         memory = MemoryLane(num_slots=8, slot_width=0.85)
-        memory.move_to(DOWN * 2.5)
+        memory.move_to(DOWN * 1.8)
 
         self.play(FadeIn(grid), FadeIn(memory), run_time=45.65 * 0.6)
 

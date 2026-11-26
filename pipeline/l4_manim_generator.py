@@ -712,8 +712,9 @@ class ManimEngine:
         try:
             from pipeline.deepseek_director import DeepSeekDirector
             director = DeepSeekDirector()
+            topic_str = f"{chunk_id} {timeline.get('title', '')}"
             code_str, scene_class = director.generate_manim_code_for_concept(
-                topic=chunk_id,
+                topic=topic_str,
                 timeline_beats=beats,
                 project_root=config.BASE_DIR
             )
@@ -749,7 +750,7 @@ class ManimEngine:
             b3_time, b3_pause = 3.0, 2.0
 
         # Intelligent Semantic Router for all CUDA architectural topics
-        cid = chunk_id.lower()
+        cid = f"{chunk_id.lower()} {timeline.get('title', '').lower()}"
         if any(k in cid for k in ["gemm", "matrix", "matmul", "tiled_gemm"]):
             template = SCENE_TEMPLATE_TILED_GEMM
             scene_class = "CudaTiledGemmScene"
