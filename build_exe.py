@@ -44,6 +44,8 @@ HIDDEN_IMPORTS = [
     "pipeline.full_book_orchestrator",
     "pipeline.deepseek_director",
     "pipeline.l4_manim_generator",
+    "pipeline.pedagogy_curriculum",
+    "pipeline.episode_router",
 ]
 
 EXCLUDES = [
