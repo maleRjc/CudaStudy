@@ -2,324 +2,900 @@
   "sec_id": "sec_001_introduction",
   "chunk_id": "sec_001_introduction",
   "concept_id": "sec_001_introduction",
-  "title": "Introduction",
-  "total_video_duration": 435.048,
+  "title": "为什么需要 GPU？CPU 与 GPU 的本质区别",
+  "total_video_duration": 159.712,
   "slides": [
     {
-      "beat_id": 1,
       "slide_id": 1,
-      "title": "GPU 的演进：从固定功能到通用计算",
+      "beat_id": 1,
+      "index": 1,
+      "title": "小白之问：有了顶级 CPU，为什么还要买显卡？",
       "slide_type": "title_overview",
       "key_points": [
-        "GPU 最初是为 3D 图形设计的专用处理器，采用固定功能硬件加速并行操作。",
-        "经过多代发展，GPU 逐渐变得可编程；到 2003 年，图形管线部分阶段已完全可编程。",
-        "2006 年 NVIDIA 推出 CUDA，使任何计算工作负载都能利用 GPU 的吞吐能力，而不依赖图形 API。",
-        "如今 GPU 计算已加速几乎所有类型的计算负载，并成为新算法（如图像分类、生成式 AI）的基础。"
+        "疑问：我的 CPU 已经有 8 核 4.5GHz，为什么算 AI 和图像时它慢得像乌龟？",
+        "本质：CPU 追求单任务极致极速（低延迟），GPU 追求海量任务一起算（高吞吐）。",
+        "芯片晶体管取舍：CPU 把面积留给大脑袋（缓存与控制），GPU 铺满了算术手（ALU）。"
       ],
-      "layout_zone": "center",
-      "visual_spec": {
-        "layout": "header_and_bullets",
-        "code_badge": "GPU 演进时间线：固定功能 → 可编程管线 → CUDA 通用计算"
-      },
-      "visual_action": "",
-      "narration": "各位同学，今天我们要深入理解 GPU 是如何从图形专用硬件演变为通用计算引擎的。最初，GPU 是固定功能硬件，专门加速 3D 渲染中的并行操作，比如顶点变换和像素着色。随着技术进步，GPU 变得越来越可编程。到 2003 年，图形管线的某些阶段已经允许开发者编写自定义代码，并行处理 3D 场景的每个组件或图像的每个像素。这是一个关键转折点，因为可编程性意味着 GPU 不再局限于图形。2006 年，NVIDIA 推出了 CUDA，这是一个革命性的架构，它让任何计算工作负载都能利用 GPU 的吞吐能力，而无需通过图形 API。从此，GPU 计算被用于加速流体动力学、能源传输等科学模拟，以及数据库、分析等商业应用。更重要的是，GPU 的能力和可编程性成为了图像分类、扩散模型、大语言模型等新算法和技术的基石。",
-      "audio_file": "E:\\CudaStudy\\output\\audio\\sec_001_introduction_slide_1.mp3",
-      "audio_duration": 72.624,
-      "action_duration": 72.624,
-      "pause_buffer": 3.5,
-      "total_beat_duration": 76.124,
-      "start_time": 0.0,
-      "end_time": 76.124
-    },
-    {
-      "beat_id": 2,
-      "slide_id": 2,
-      "title": "为什么使用 GPU？性能与能效的权衡",
-      "slide_type": "concept_breakdown",
-      "key_points": [
-        "在相近价格和功耗范围内，GPU 提供比 CPU 更高的指令吞吐量和内存带宽。",
-        "许多应用利用这些能力在 GPU 上运行得比 CPU 快得多。",
-        "FPGA 等其他设备能效也很高，但编程灵活性远不如 GPU。",
-        "GPU 和 CPU 的设计目标不同：CPU 擅长快速执行串行线程，GPU 擅长并行执行数千线程。"
-      ],
-      "layout_zone": "center",
-      "visual_spec": {
-        "layout": "header_and_bullets",
-        "code_badge": "CPU：低延迟，少线程；GPU：高吞吐，多线程"
-      },
-      "visual_action": "",
-      "narration": "接下来我们探讨为什么 GPU 在计算领域如此重要。核心原因在于：在相似的价格和功耗范围内，GPU 能提供比 CPU 高得多的指令吞吐量和内存带宽。这意味着对于许多应用，GPU 可以显著加速计算。当然，其他设备如 FPGA 也非常节能，但它们的编程灵活性远不及 GPU，这使得 GPU 在通用性和性能之间取得了最佳平衡。理解这一点需要明白 CPU 和 GPU 的设计哲学差异。CPU 的设计目标是尽可能快地执行串行操作序列（称为线程），并能并行执行几十个这样的线程。而 GPU 的设计目标是同时执行数千个线程，它牺牲了单线程性能以换取巨大的总吞吐量。这种差异源于它们面向的问题不同：CPU 处理的是延迟敏感、逻辑复杂的任务，而 GPU 处理的是数据并行、计算密集的任务。",
-      "audio_file": "E:\\CudaStudy\\output\\audio\\sec_001_introduction_slide_2.mp3",
-      "audio_duration": 68.88,
-      "action_duration": 68.88,
-      "pause_buffer": 3.5,
-      "total_beat_duration": 72.38,
-      "start_time": 76.124,
-      "end_time": 148.504
-    },
-    {
-      "beat_id": 3,
-      "slide_id": 3,
-      "title": "CPU 与 GPU 的微架构差异：晶体管分配",
-      "slide_type": "manim_physics_demo",
-      "key_points": [
-        "GPU 将更多晶体管用于数据处理单元（如 ALU），而 CPU 将更多晶体管用于数据缓存和流控制。",
-        "这种分配差异导致 GPU 拥有大量简单的计算核心，CPU 拥有少量复杂的核心。",
-        "图 1 展示了 CPU 与 GPU 芯片资源的示例分布。",
-        "GPU 的架构适合高度并行计算，CPU 的架构适合串行和复杂控制流。"
-      ],
-      "layout_zone": "center",
+      "layout": "collision_animation",
       "visual_spec": {
         "layout": "collision_animation",
-        "code_badge": "CPU：Cache+Control 为主；GPU：ALU 阵列为主"
+        "code_badge": "",
+        "scene_plan": {
+          "schema": "plan-v2",
+          "kind": "boxes",
+          "slide_id": 1,
+          "title": "小白之问：CPU 与 GPU 的核心使命不同",
+          "subtitle": "低延迟（单人飞奔） vs 高吞吐（万人齐步走）",
+          "figure": {
+            "nodes": [
+              {
+                "id": "cpu",
+                "label": "CPU 核心 (低延迟超级专家)"
+              },
+              {
+                "id": "cache",
+                "label": "超大缓存 L3 Cache (防断货)"
+              },
+              {
+                "id": "gpu",
+                "label": "GPU 核心阵列 (海量微型计算器)"
+              },
+              {
+                "id": "vram",
+                "label": "高带宽显存 VRAM (高速输送带)"
+              }
+            ],
+            "edges": [
+              [
+                "cpu",
+                "cache",
+                "极快读取"
+              ],
+              [
+                "gpu",
+                "vram",
+                "极宽总线吞吐"
+              ]
+            ]
+          },
+          "steps": [
+            {
+              "heading": "CPU：追求单任务极致低延迟",
+              "bullets": [
+                "单核极其强大，擅长复杂的逻辑判断和操作系统调度。"
+              ],
+              "focus": [
+                0,
+                1
+              ],
+              "narration": "CPU 就像一位顶级的全能数学教授，他的个人能力强悍到极点，擅长做复杂的分支判断和操作系统调度，核心目标是尽可能快地搞定手头这一个任务。"
+            },
+            {
+              "heading": "GPU：追求海量数据同时吞吐",
+              "bullets": [
+                "数千个小核心同时动笔，擅长几百万像素或矩阵的简单乘加。"
+              ],
+              "focus": [
+                2,
+                3
+              ],
+              "narration": "而 GPU 的目标截然不同，它不追求单个任务几纳秒跑完，它追求的是同时指挥成千上万个小核心一起开工，靠庞大的队伍瞬间吞吐海量数据。"
+            },
+            {
+              "heading": "硬件取舍：谁动了我的晶体管？",
+              "bullets": [
+                "CPU 晶体管大量做成缓存和分支预测，GPU 全做成了绿色计算单元。"
+              ],
+              "focus": [
+                0,
+                2
+              ],
+              "narration": "这就决定了芯片底层的晶体管分配：CPU 把大量面积都让给了超大缓存和分支预测器，而 GPU 则把几乎所有的硅片空间，全部铺满了密密麻麻的绿色计算单元！"
+            }
+          ]
+        }
       },
-      "visual_action": "",
-      "narration": "现在让我们从芯片微架构层面深入理解。大家看这个动画演示，左边是 CPU 的芯片资源分布，右边是 GPU 的。CPU 将大量晶体管用于数据缓存（Cache）和流控制（Control），只有少部分用于算术逻辑单元（ALU）。这是因为 CPU 需要处理复杂的控制逻辑、分支预测和缓存一致性，以降低延迟。而 GPU 则相反，它将绝大部分晶体管用于数据处理单元，即大量的 ALU，缓存和控制单元相对简单。这种设计使得 GPU 能够同时执行数千个线程，通过线程级并行来隐藏内存延迟。动画中你可以看到，GPU 的 ALU 阵列非常密集，像一片网格，而 CPU 的 ALU 只是几个大块。这种架构差异决定了它们各自擅长的领域：CPU 适合串行任务和复杂决策，GPU 适合大规模数据并行计算。",
-      "audio_file": "E:\\CudaStudy\\output\\audio\\sec_001_introduction_slide_3.mp3",
-      "audio_duration": 69.288,
-      "action_duration": 69.288,
-      "pause_buffer": 3.5,
-      "total_beat_duration": 72.788,
-      "start_time": 148.504,
-      "end_time": 221.292
-    },
-    {
-      "beat_id": 4,
-      "slide_id": 4,
-      "title": "CUDA 的诞生与通用计算革命",
-      "slide_type": "concept_breakdown",
-      "key_points": [
-        "2006 年 NVIDIA 推出 CUDA，使 GPU 计算独立于图形 API。",
-        "CUDA 让开发者能够使用熟悉的 C/C++ 等语言编写 GPU 程序。",
-        "CUDA 加速了科学模拟（流体动力学、能源传输）和商业应用（数据库、分析）。",
-        "GPU 的可编程性推动了图像分类、生成式 AI（扩散模型、大语言模型）等新算法的发展。"
-      ],
-      "layout_zone": "center",
-      "visual_spec": {
-        "layout": "header_and_bullets",
-        "code_badge": "CUDA：让 GPU 计算独立于图形 API"
+      "scene_plan": {
+        "schema": "plan-v2",
+        "kind": "boxes",
+        "slide_id": 1,
+        "title": "小白之问：CPU 与 GPU 的核心使命不同",
+        "subtitle": "低延迟（单人飞奔） vs 高吞吐（万人齐步走）",
+        "figure": {
+          "nodes": [
+            {
+              "id": "cpu",
+              "label": "CPU 核心 (低延迟超级专家)"
+            },
+            {
+              "id": "cache",
+              "label": "超大缓存 L3 Cache (防断货)"
+            },
+            {
+              "id": "gpu",
+              "label": "GPU 核心阵列 (海量微型计算器)"
+            },
+            {
+              "id": "vram",
+              "label": "高带宽显存 VRAM (高速输送带)"
+            }
+          ],
+          "edges": [
+            [
+              "cpu",
+              "cache",
+              "极快读取"
+            ],
+            [
+              "gpu",
+              "vram",
+              "极宽总线吞吐"
+            ]
+          ]
+        },
+        "steps": [
+          {
+            "heading": "CPU：追求单任务极致低延迟",
+            "bullets": [
+              "单核极其强大，擅长复杂的逻辑判断和操作系统调度。"
+            ],
+            "focus": [
+              0,
+              1
+            ],
+            "narration": "CPU 就像一位顶级的全能数学教授，他的个人能力强悍到极点，擅长做复杂的分支判断和操作系统调度，核心目标是尽可能快地搞定手头这一个任务。"
+          },
+          {
+            "heading": "GPU：追求海量数据同时吞吐",
+            "bullets": [
+              "数千个小核心同时动笔，擅长几百万像素或矩阵的简单乘加。"
+            ],
+            "focus": [
+              2,
+              3
+            ],
+            "narration": "而 GPU 的目标截然不同，它不追求单个任务几纳秒跑完，它追求的是同时指挥成千上万个小核心一起开工，靠庞大的队伍瞬间吞吐海量数据。"
+          },
+          {
+            "heading": "硬件取舍：谁动了我的晶体管？",
+            "bullets": [
+              "CPU 晶体管大量做成缓存和分支预测，GPU 全做成了绿色计算单元。"
+            ],
+            "focus": [
+              0,
+              2
+            ],
+            "narration": "这就决定了芯片底层的晶体管分配：CPU 把大量面积都让给了超大缓存和分支预测器，而 GPU 则把几乎所有的硅片空间，全部铺满了密密麻麻的绿色计算单元！"
+          }
+        ],
+        "duration": 43.912,
+        "windows": [
+          {
+            "start": 0.0,
+            "end": 13.848
+          },
+          {
+            "start": 13.848,
+            "end": 27.72
+          },
+          {
+            "start": 27.72,
+            "end": 42.312
+          }
+        ]
       },
-      "visual_action": "",
-      "narration": "2006 年 CUDA 的推出是计算领域的里程碑。在此之前，利用 GPU 进行计算需要借助图形 API，如 OpenGL 或 DirectX，将计算伪装成渲染任务，这非常繁琐且低效。CUDA 彻底改变了这一局面，它提供了一个通用的编程模型，让开发者可以直接使用 C、C++ 等语言编写在 GPU 上运行的程序，而无需了解图形管线。这大大降低了 GPU 编程的门槛，使得科学家和工程师能够轻松地将计算密集型任务迁移到 GPU 上。从那时起，CUDA 和 GPU 计算被用于加速几乎所有类型的计算负载：从流体动力学、能源传输等科学模拟，到数据库、分析等商业应用。更重要的是，GPU 的能力和可编程性成为了新算法和技术的基石，从图像分类到生成式人工智能，如扩散模型和大语言模型，都离不开 GPU 的并行计算能力。",
-      "audio_file": "E:\\CudaStudy\\output\\audio\\sec_001_introduction_slide_4.mp3",
-      "audio_duration": 68.784,
-      "action_duration": 68.784,
-      "pause_buffer": 3.5,
-      "total_beat_duration": 72.284,
-      "start_time": 221.292,
-      "end_time": 293.576
-    },
-    {
-      "beat_id": 5,
-      "slide_id": 5,
-      "title": "线程级并行：CPU 与 GPU 的执行模型对比",
-      "slide_type": "concept_breakdown",
-      "key_points": [
-        "CPU 擅长快速执行串行线程，并能并行执行几十个线程。",
-        "GPU 擅长同时执行数千个线程，牺牲单线程性能以换取总吞吐量。",
-        "GPU 通过大量线程隐藏内存延迟，实现高吞吐量。",
-        "这种差异决定了编程模型：CPU 程序注重减少延迟，GPU 程序注重最大化并行度。"
-      ],
-      "layout_zone": "center",
-      "visual_spec": {
-        "layout": "header_and_bullets",
-        "code_badge": "CPU：延迟导向；GPU：吞吐导向"
-      },
-      "visual_action": "",
-      "narration": "让我们进一步对比 CPU 和 GPU 的执行模型。CPU 被设计为尽可能快地执行一个串行操作序列，即一个线程。它通过乱序执行、分支预测、大容量缓存等技术来降低延迟。同时，CPU 也能并行执行几十个线程，比如通过超线程或多核。但 GPU 的设计目标截然不同：它要同时执行数千个线程。GPU 的每个线程相对简单，单线程性能较低，但通过海量线程并行，总吞吐量极高。当一些线程等待内存时，GPU 可以切换到其他线程继续计算，从而隐藏内存延迟。这种模型要求程序具有高度的数据并行性。因此，在 GPU 上编程时，我们需要将问题分解成许多可以并行执行的小任务，而不是依赖单个线程的快速执行。理解这一点是编写高效 CUDA 程序的关键。",
-      "audio_file": "E:\\CudaStudy\\output\\audio\\sec_001_introduction_slide_5.mp3",
-      "audio_duration": 66.408,
-      "action_duration": 66.408,
-      "pause_buffer": 3.5,
-      "total_beat_duration": 69.908,
-      "start_time": 293.576,
-      "end_time": 363.484
-    },
-    {
-      "beat_id": 6,
-      "slide_id": 6,
-      "title": "总结：GPU 计算的核心优势与适用场景",
-      "slide_type": "summary_best_practice",
-      "key_points": [
-        "GPU 从图形专用硬件演变为通用并行计算引擎，CUDA 是这一转变的关键。",
-        "GPU 在相似功耗和价格下提供更高的指令吞吐量和内存带宽。",
-        "GPU 微架构将更多晶体管用于数据处理，适合高度并行计算。",
-        "GPU 通过数千线程并行隐藏延迟，实现高吞吐量，适合数据并行任务。",
-        "GPU 计算已广泛应用于科学、商业和人工智能领域。"
-      ],
-      "layout_zone": "center",
-      "visual_spec": {
-        "layout": "summary_and_checklist",
-        "code_badge": "GPU 计算：高吞吐、多线程、数据并行"
-      },
-      "visual_action": "",
-      "narration": "最后，我们来总结本节的核心内容。GPU 最初是为 3D 图形设计的固定功能硬件，经过多代演进变得可编程，并在 2006 年通过 CUDA 实现了通用计算。GPU 的核心优势在于：在相似的价格和功耗范围内，它能提供比 CPU 高得多的指令吞吐量和内存带宽。这源于其微架构设计：GPU 将更多晶体管用于数据处理单元，而非缓存和控制逻辑，从而能够同时执行数千个线程。这种设计牺牲了单线程性能，但换来了巨大的总吞吐量，非常适合数据并行任务。如今，GPU 计算已广泛应用于科学模拟、商业分析、图像分类和生成式 AI 等领域。作为开发者，理解 CPU 和 GPU 的设计哲学差异，是编写高效并行程序的基础。希望同学们牢记这些核心概念，并在后续课程中深入实践。",
-      "audio_file": "E:\\CudaStudy\\output\\audio\\sec_001_introduction_slide_6.mp3",
-      "audio_duration": 68.064,
-      "action_duration": 68.064,
-      "pause_buffer": 3.5,
-      "total_beat_duration": 71.564,
-      "start_time": 363.484,
-      "end_time": 435.048
-    }
-  ],
-  "beats": [
-    {
-      "beat_id": 1,
-      "slide_id": 1,
-      "title": "GPU 的演进：从固定功能到通用计算",
-      "slide_type": "title_overview",
-      "key_points": [
-        "GPU 最初是为 3D 图形设计的专用处理器，采用固定功能硬件加速并行操作。",
-        "经过多代发展，GPU 逐渐变得可编程；到 2003 年，图形管线部分阶段已完全可编程。",
-        "2006 年 NVIDIA 推出 CUDA，使任何计算工作负载都能利用 GPU 的吞吐能力，而不依赖图形 API。",
-        "如今 GPU 计算已加速几乎所有类型的计算负载，并成为新算法（如图像分类、生成式 AI）的基础。"
-      ],
-      "layout_zone": "center",
-      "visual_spec": {
-        "layout": "header_and_bullets",
-        "code_badge": "GPU 演进时间线：固定功能 → 可编程管线 → CUDA 通用计算"
-      },
-      "visual_action": "",
-      "narration": "各位同学，今天我们要深入理解 GPU 是如何从图形专用硬件演变为通用计算引擎的。最初，GPU 是固定功能硬件，专门加速 3D 渲染中的并行操作，比如顶点变换和像素着色。随着技术进步，GPU 变得越来越可编程。到 2003 年，图形管线的某些阶段已经允许开发者编写自定义代码，并行处理 3D 场景的每个组件或图像的每个像素。这是一个关键转折点，因为可编程性意味着 GPU 不再局限于图形。2006 年，NVIDIA 推出了 CUDA，这是一个革命性的架构，它让任何计算工作负载都能利用 GPU 的吞吐能力，而无需通过图形 API。从此，GPU 计算被用于加速流体动力学、能源传输等科学模拟，以及数据库、分析等商业应用。更重要的是，GPU 的能力和可编程性成为了图像分类、扩散模型、大语言模型等新算法和技术的基石。",
-      "audio_file": "E:\\CudaStudy\\output\\audio\\sec_001_introduction_slide_1.mp3",
-      "audio_duration": 72.624,
-      "action_duration": 72.624,
-      "pause_buffer": 3.5,
-      "total_beat_duration": 76.124,
+      "narration": "CPU 就像一位顶级的全能数学教授，他的个人能力强悍到极点，擅长做复杂的分支判断和操作系统调度，核心目标是尽可能快地搞定手头这一个任务。 而 GPU 的目标截然不同，它不追求单个任务几纳秒跑完，它追求的是同时指挥成千上万个小核心一起开工，靠庞大的队伍瞬间吞吐海量数据。 这就决定了芯片底层的晶体管分配：CPU 把大量面积都让给了超大缓存和分支预测器，而 GPU 则把几乎所有的硅片空间，全部铺满了密密麻麻的绿色计算单元！",
+      "audio_file": "E:\\CudaStudy\\output\\audio\\sec_001_introduction_s01_steps_c8e4e7373c.mp3",
+      "audio_duration": 42.312,
+      "pause_buffer": 2.2,
+      "total_beat_duration": 44.512,
       "start_time": 0.0,
-      "end_time": 76.124
+      "end_time": 44.512,
+      "cues": [
+        {
+          "start": 0.0,
+          "end": 5.869,
+          "text": "CPU 就像一位顶级的全能数学教授，他的个人能力强悍到极点，"
+        },
+        {
+          "start": 5.869,
+          "end": 9.648,
+          "text": "擅长做复杂的分支判断和操作系统调度，"
+        },
+        {
+          "start": 9.648,
+          "end": 13.848,
+          "text": "核心目标是尽可能快地搞定手头这一个任务。"
+        },
+        {
+          "start": 13.848,
+          "end": 19.475,
+          "text": "而 GPU 的目标截然不同，它不追求单个任务几纳秒跑完，"
+        },
+        {
+          "start": 19.475,
+          "end": 24.377,
+          "text": "它追求的是同时指挥成千上万个小核心一起开工，"
+        },
+        {
+          "start": 24.377,
+          "end": 27.72,
+          "text": "靠庞大的队伍瞬间吞吐海量数据。"
+        },
+        {
+          "start": 27.72,
+          "end": 31.046,
+          "text": "这就决定了芯片底层的晶体管分配："
+        },
+        {
+          "start": 31.046,
+          "end": 35.608,
+          "text": "CPU 把大量面积都让给了超大缓存和分支预测器，"
+        },
+        {
+          "start": 35.608,
+          "end": 38.778,
+          "text": "而 GPU 则把几乎所有的硅片空间，"
+        },
+        {
+          "start": 38.778,
+          "end": 42.312,
+          "text": "全部铺满了密密麻麻的绿色计算单元！"
+        }
+      ]
     },
     {
-      "beat_id": 2,
       "slide_id": 2,
-      "title": "为什么使用 GPU？性能与能效的权衡",
-      "slide_type": "concept_breakdown",
+      "beat_id": 2,
+      "index": 2,
+      "title": "生活大比方：老教授 vs 5000 个小学生",
+      "slide_type": "metaphor_sketch",
       "key_points": [
-        "在相近价格和功耗范围内，GPU 提供比 CPU 更高的指令吞吐量和内存带宽。",
-        "许多应用利用这些能力在 GPU 上运行得比 CPU 快得多。",
-        "FPGA 等其他设备能效也很高，但编程灵活性远不如 GPU。",
-        "GPU 和 CPU 的设计目标不同：CPU 擅长快速执行串行线程，GPU 擅长并行执行数千线程。"
+        "CPU 是大学老教授：精通微积分和奥数，但他只有一个人，做题只能一道道来。",
+        "GPU 是 5000 个小学生：只会最简单的加减乘除，但 5000 个人同时坐在大礼堂里动笔。",
+        "算一千万道加减法：老教授做完要累趴下，5000 个小学生一人一道，几秒钟全班交卷！"
       ],
-      "layout_zone": "center",
-      "visual_spec": {
-        "layout": "header_and_bullets",
-        "code_badge": "CPU：低延迟，少线程；GPU：高吞吐，多线程"
-      },
-      "visual_action": "",
-      "narration": "接下来我们探讨为什么 GPU 在计算领域如此重要。核心原因在于：在相似的价格和功耗范围内，GPU 能提供比 CPU 高得多的指令吞吐量和内存带宽。这意味着对于许多应用，GPU 可以显著加速计算。当然，其他设备如 FPGA 也非常节能，但它们的编程灵活性远不及 GPU，这使得 GPU 在通用性和性能之间取得了最佳平衡。理解这一点需要明白 CPU 和 GPU 的设计哲学差异。CPU 的设计目标是尽可能快地执行串行操作序列（称为线程），并能并行执行几十个这样的线程。而 GPU 的设计目标是同时执行数千个线程，它牺牲了单线程性能以换取巨大的总吞吐量。这种差异源于它们面向的问题不同：CPU 处理的是延迟敏感、逻辑复杂的任务，而 GPU 处理的是数据并行、计算密集的任务。",
-      "audio_file": "E:\\CudaStudy\\output\\audio\\sec_001_introduction_slide_2.mp3",
-      "audio_duration": 68.88,
-      "action_duration": 68.88,
-      "pause_buffer": 3.5,
-      "total_beat_duration": 72.38,
-      "start_time": 76.124,
-      "end_time": 148.504
-    },
-    {
-      "beat_id": 3,
-      "slide_id": 3,
-      "title": "CPU 与 GPU 的微架构差异：晶体管分配",
-      "slide_type": "manim_physics_demo",
-      "key_points": [
-        "GPU 将更多晶体管用于数据处理单元（如 ALU），而 CPU 将更多晶体管用于数据缓存和流控制。",
-        "这种分配差异导致 GPU 拥有大量简单的计算核心，CPU 拥有少量复杂的核心。",
-        "图 1 展示了 CPU 与 GPU 芯片资源的示例分布。",
-        "GPU 的架构适合高度并行计算，CPU 的架构适合串行和复杂控制流。"
-      ],
-      "layout_zone": "center",
+      "layout": "collision_animation",
       "visual_spec": {
         "layout": "collision_animation",
-        "code_badge": "CPU：Cache+Control 为主；GPU：ALU 阵列为主"
+        "code_badge": "",
+        "scene_plan": {
+          "schema": "plan-v2",
+          "kind": "compare",
+          "slide_id": 2,
+          "title": "生动类比：算力哲学的根本分野",
+          "subtitle": "老教授串行单打独斗 vs 小学生海量并发军团",
+          "figure": {
+            "left": {
+              "title": "CPU 模型：1 位顶级数学老教授",
+              "lines": [
+                "智商极高：精通微积分与分支逻辑",
+                "串行解题：一道接着一道算",
+                "面对 1000 万道加法：需要耗时数小时",
+                "瓶颈：双拳难敌四手"
+              ]
+            },
+            "right": {
+              "title": "GPU 模型：5000 位勤劳的小学生",
+              "lines": [
+                "单兵简单：只会基础加减乘除",
+                "海量并发：5000 人同时落笔",
+                "面对 1000 万道加法：几秒钟交卷",
+                "优势：极致的大规模数据吞吐"
+              ]
+            }
+          },
+          "steps": [
+            {
+              "heading": "第一步：审视任务特性",
+              "bullets": [
+                "如果任务是复杂逻辑决策，CPU 是绝对王者。"
+              ],
+              "focus": [
+                0
+              ],
+              "narration": "在编程世界里，先看你的任务是什么。如果任务是操作系统调度、复杂数据库事务，需要极高智商的老教授也就是 CPU 出马。"
+            },
+            {
+              "heading": "第二步：面对海量独立计算",
+              "bullets": [
+                "当任务由数百万个独立加减法组成，GPU 完胜。"
+              ],
+              "focus": [
+                1
+              ],
+              "narration": "但图像的几百万个像素、AI 模型的千亿参数乘法，全是彼此互不干扰的加减乘除。这时候派 5000 个小学生同时动笔，效率就会瞬间起飞！"
+            },
+            {
+              "heading": "第三步：确立异构协同心智",
+              "bullets": [
+                "老教授当总指挥，小学生干苦力活，这就是异构计算！"
+              ],
+              "focus": [
+                0,
+                1
+              ],
+              "narration": "所以现代计算机的最佳拍档诞生了：老教授 CPU 在办公室负责统筹大局发号施令，小学生 GPU 在工厂里负责批量干体力活，这就是异构协同！"
+            }
+          ]
+        }
       },
-      "visual_action": "",
-      "narration": "现在让我们从芯片微架构层面深入理解。大家看这个动画演示，左边是 CPU 的芯片资源分布，右边是 GPU 的。CPU 将大量晶体管用于数据缓存（Cache）和流控制（Control），只有少部分用于算术逻辑单元（ALU）。这是因为 CPU 需要处理复杂的控制逻辑、分支预测和缓存一致性，以降低延迟。而 GPU 则相反，它将绝大部分晶体管用于数据处理单元，即大量的 ALU，缓存和控制单元相对简单。这种设计使得 GPU 能够同时执行数千个线程，通过线程级并行来隐藏内存延迟。动画中你可以看到，GPU 的 ALU 阵列非常密集，像一片网格，而 CPU 的 ALU 只是几个大块。这种架构差异决定了它们各自擅长的领域：CPU 适合串行任务和复杂决策，GPU 适合大规模数据并行计算。",
-      "audio_file": "E:\\CudaStudy\\output\\audio\\sec_001_introduction_slide_3.mp3",
-      "audio_duration": 69.288,
-      "action_duration": 69.288,
-      "pause_buffer": 3.5,
-      "total_beat_duration": 72.788,
-      "start_time": 148.504,
-      "end_time": 221.292
+      "scene_plan": {
+        "schema": "plan-v2",
+        "kind": "compare",
+        "slide_id": 2,
+        "title": "生动类比：算力哲学的根本分野",
+        "subtitle": "老教授串行单打独斗 vs 小学生海量并发军团",
+        "figure": {
+          "left": {
+            "title": "CPU 模型：1 位顶级数学老教授",
+            "lines": [
+              "智商极高：精通微积分与分支逻辑",
+              "串行解题：一道接着一道算",
+              "面对 1000 万道加法：需要耗时数小时",
+              "瓶颈：双拳难敌四手"
+            ]
+          },
+          "right": {
+            "title": "GPU 模型：5000 位勤劳的小学生",
+            "lines": [
+              "单兵简单：只会基础加减乘除",
+              "海量并发：5000 人同时落笔",
+              "面对 1000 万道加法：几秒钟交卷",
+              "优势：极致的大规模数据吞吐"
+            ]
+          }
+        },
+        "steps": [
+          {
+            "heading": "第一步：审视任务特性",
+            "bullets": [
+              "如果任务是复杂逻辑决策，CPU 是绝对王者。"
+            ],
+            "focus": [
+              0
+            ],
+            "narration": "在编程世界里，先看你的任务是什么。如果任务是操作系统调度、复杂数据库事务，需要极高智商的老教授也就是 CPU 出马。"
+          },
+          {
+            "heading": "第二步：面对海量独立计算",
+            "bullets": [
+              "当任务由数百万个独立加减法组成，GPU 完胜。"
+            ],
+            "focus": [
+              1
+            ],
+            "narration": "但图像的几百万个像素、AI 模型的千亿参数乘法，全是彼此互不干扰的加减乘除。这时候派 5000 个小学生同时动笔，效率就会瞬间起飞！"
+          },
+          {
+            "heading": "第三步：确立异构协同心智",
+            "bullets": [
+              "老教授当总指挥，小学生干苦力活，这就是异构计算！"
+            ],
+            "focus": [
+              0,
+              1
+            ],
+            "narration": "所以现代计算机的最佳拍档诞生了：老教授 CPU 在办公室负责统筹大局发号施令，小学生 GPU 在工厂里负责批量干体力活，这就是异构协同！"
+          }
+        ],
+        "duration": 42.688,
+        "windows": [
+          {
+            "start": 0.0,
+            "end": 12.312
+          },
+          {
+            "start": 12.312,
+            "end": 26.736
+          },
+          {
+            "start": 26.736,
+            "end": 41.088
+          }
+        ]
+      },
+      "narration": "在编程世界里，先看你的任务是什么。如果任务是操作系统调度、复杂数据库事务，需要极高智商的老教授也就是 CPU 出马。 但图像的几百万个像素、AI 模型的千亿参数乘法，全是彼此互不干扰的加减乘除。这时候派 5000 个小学生同时动笔，效率就会瞬间起飞！ 所以现代计算机的最佳拍档诞生了：老教授 CPU 在办公室负责统筹大局发号施令，小学生 GPU 在工厂里负责批量干体力活，这就是异构协同！",
+      "audio_file": "E:\\CudaStudy\\output\\audio\\sec_001_introduction_s02_steps_78a0653d6d.mp3",
+      "audio_duration": 41.088,
+      "pause_buffer": 2.2,
+      "total_beat_duration": 43.288,
+      "start_time": 44.512,
+      "end_time": 87.8,
+      "cues": [
+        {
+          "start": 44.512,
+          "end": 48.3,
+          "text": "在编程世界里，先看你的任务是什么。"
+        },
+        {
+          "start": 48.3,
+          "end": 52.757,
+          "text": "如果任务是操作系统调度、复杂数据库事务，"
+        },
+        {
+          "start": 52.757,
+          "end": 56.824,
+          "text": "需要极高智商的老教授也就是 CPU 出马。"
+        },
+        {
+          "start": 56.824,
+          "end": 62.103,
+          "text": "但图像的几百万个像素、AI 模型的千亿参数乘法，"
+        },
+        {
+          "start": 62.103,
+          "end": 65.403,
+          "text": "全是彼此互不干扰的加减乘除。"
+        },
+        {
+          "start": 65.403,
+          "end": 71.248,
+          "text": "这时候派 5000 个小学生同时动笔，效率就会瞬间起飞！"
+        },
+        {
+          "start": 71.248,
+          "end": 74.922,
+          "text": "所以现代计算机的最佳拍档诞生了："
+        },
+        {
+          "start": 74.922,
+          "end": 79.572,
+          "text": "老教授 CPU 在办公室负责统筹大局发号施令，"
+        },
+        {
+          "start": 79.572,
+          "end": 85.6,
+          "text": "小学生 GPU 在工厂里负责批量干体力活，这就是异构协同！"
+        }
+      ]
     },
     {
-      "beat_id": 4,
+      "slide_id": 3,
+      "beat_id": 3,
+      "index": 3,
+      "title": "从图形到通用计算：CUDA 到底革了什么命？",
+      "slide_type": "concept_breakdown",
+      "key_points": [
+        "过去：GPU 只是用来给显示器画 3D 游戏的（固定渲染管线）。",
+        "痛点：早年想用显卡算数学，必须把数据伪装成三角形和像素颜色，极其痛苦。",
+        "2006 年 CUDA 诞生：NVIDIA 彻底打通壁垒，让程序员用 C/C++ 就能直接指挥小学生！"
+      ],
+      "layout": "collision_animation",
+      "visual_spec": {
+        "layout": "collision_animation",
+        "code_badge": "",
+        "scene_plan": {
+          "schema": "plan-v2",
+          "kind": "timeline",
+          "slide_id": 3,
+          "title": "GPU 演进之路：从专用画图器到通用算力霸主",
+          "subtitle": "固定图形渲染 → 可编程着色器 → 2006 CUDA 通用革命",
+          "figure": {
+            "rows": [
+              {
+                "label": "1999 以前：固定画图",
+                "segments": [
+                  {
+                    "start": 0.0,
+                    "end": 3.0,
+                    "label": "纯硬件固定管线，只能画三角形"
+                  }
+                ]
+              },
+              {
+                "label": "2003 时代：伪装渲染",
+                "segments": [
+                  {
+                    "start": 2.5,
+                    "end": 6.5,
+                    "label": "GPGPU 极客时代：数字伪装成像素颜色"
+                  }
+                ]
+              },
+              {
+                "label": "2006 至今：CUDA 时代",
+                "segments": [
+                  {
+                    "start": 5.5,
+                    "end": 10.0,
+                    "label": "CUDA 诞生：原生 C/C++ 通用并行计算"
+                  }
+                ]
+              }
+            ]
+          },
+          "steps": [
+            {
+              "heading": "第一阶段：固定画图工具人",
+              "bullets": [
+                "显卡只懂顶点变换和像素光照，无法做通用数学。"
+              ],
+              "focus": [
+                0
+              ],
+              "narration": "早期的显卡硬件电路是焊死的，只认三维坐标和光照公式，外界根本无法指挥它做其他任何数学运算。"
+            },
+            {
+              "heading": "第二阶段：披着画图马甲的极客运算",
+              "bullets": [
+                "极客把数据伪装成纹理颜色，用像素着色器算数学。"
+              ],
+              "focus": [
+                1
+              ],
+              "narration": "到了千禧年初期，图形管线有了可编程着色器，极客们把数据伪装成图像纹理偷偷算数学，但开发极其晦涩艰难。"
+            },
+            {
+              "heading": "第三阶段：CUDA 让显卡成为通用超级计算机",
+              "bullets": [
+                "通用计算独立于图形接口，点燃全球 AI 与深度学习革命。"
+              ],
+              "focus": [
+                2
+              ],
+              "narration": "直到 2006 年 CUDA 横空出世，显卡脱胎换骨成为通用并行加速器，正式拉开了全球 AI 计算大航海时代的序幕！"
+            }
+          ]
+        }
+      },
+      "scene_plan": {
+        "schema": "plan-v2",
+        "kind": "timeline",
+        "slide_id": 3,
+        "title": "GPU 演进之路：从专用画图器到通用算力霸主",
+        "subtitle": "固定图形渲染 → 可编程着色器 → 2006 CUDA 通用革命",
+        "figure": {
+          "rows": [
+            {
+              "label": "1999 以前：固定画图",
+              "segments": [
+                {
+                  "start": 0.0,
+                  "end": 3.0,
+                  "label": "纯硬件固定管线，只能画三角形"
+                }
+              ]
+            },
+            {
+              "label": "2003 时代：伪装渲染",
+              "segments": [
+                {
+                  "start": 2.5,
+                  "end": 6.5,
+                  "label": "GPGPU 极客时代：数字伪装成像素颜色"
+                }
+              ]
+            },
+            {
+              "label": "2006 至今：CUDA 时代",
+              "segments": [
+                {
+                  "start": 5.5,
+                  "end": 10.0,
+                  "label": "CUDA 诞生：原生 C/C++ 通用并行计算"
+                }
+              ]
+            }
+          ]
+        },
+        "steps": [
+          {
+            "heading": "第一阶段：固定画图工具人",
+            "bullets": [
+              "显卡只懂顶点变换和像素光照，无法做通用数学。"
+            ],
+            "focus": [
+              0
+            ],
+            "narration": "早期的显卡硬件电路是焊死的，只认三维坐标和光照公式，外界根本无法指挥它做其他任何数学运算。"
+          },
+          {
+            "heading": "第二阶段：披着画图马甲的极客运算",
+            "bullets": [
+              "极客把数据伪装成纹理颜色，用像素着色器算数学。"
+            ],
+            "focus": [
+              1
+            ],
+            "narration": "到了千禧年初期，图形管线有了可编程着色器，极客们把数据伪装成图像纹理偷偷算数学，但开发极其晦涩艰难。"
+          },
+          {
+            "heading": "第三阶段：CUDA 让显卡成为通用超级计算机",
+            "bullets": [
+              "通用计算独立于图形接口，点燃全球 AI 与深度学习革命。"
+            ],
+            "focus": [
+              2
+            ],
+            "narration": "直到 2006 年 CUDA 横空出世，显卡脱胎换骨成为通用并行加速器，正式拉开了全球 AI 计算大航海时代的序幕！"
+          }
+        ],
+        "duration": 35.632,
+        "windows": [
+          {
+            "start": 0.0,
+            "end": 10.296
+          },
+          {
+            "start": 10.296,
+            "end": 22.032
+          },
+          {
+            "start": 22.032,
+            "end": 34.032
+          }
+        ]
+      },
+      "narration": "早期的显卡硬件电路是焊死的，只认三维坐标和光照公式，外界根本无法指挥它做其他任何数学运算。 到了千禧年初期，图形管线有了可编程着色器，极客们把数据伪装成图像纹理偷偷算数学，但开发极其晦涩艰难。 直到 2006 年 CUDA 横空出世，显卡脱胎换骨成为通用并行加速器，正式拉开了全球 AI 计算大航海时代的序幕！",
+      "audio_file": "E:\\CudaStudy\\output\\audio\\sec_001_introduction_s03_steps_1387e50108.mp3",
+      "audio_duration": 34.032,
+      "pause_buffer": 2.2,
+      "total_beat_duration": 36.232,
+      "start_time": 87.8,
+      "end_time": 124.032,
+      "cues": [
+        {
+          "start": 87.8,
+          "end": 93.749,
+          "text": "早期的显卡硬件电路是焊死的，只认三维坐标和光照公式，"
+        },
+        {
+          "start": 93.749,
+          "end": 98.096,
+          "text": "外界根本无法指挥它做其他任何数学运算。"
+        },
+        {
+          "start": 98.096,
+          "end": 103.025,
+          "text": "到了千禧年初期，图形管线有了可编程着色器，"
+        },
+        {
+          "start": 103.025,
+          "end": 107.485,
+          "text": "极客们把数据伪装成图像纹理偷偷算数学，"
+        },
+        {
+          "start": 107.485,
+          "end": 109.832,
+          "text": "但开发极其晦涩艰难。"
+        },
+        {
+          "start": 109.832,
+          "end": 113.142,
+          "text": "直到 2006 年 CUDA 横空出世，"
+        },
+        {
+          "start": 113.142,
+          "end": 117.037,
+          "text": "显卡脱胎换骨成为通用并行加速器，"
+        },
+        {
+          "start": 117.037,
+          "end": 121.832,
+          "text": "正式拉开了全球 AI 计算大航海时代的序幕！"
+        }
+      ]
+    },
+    {
       "slide_id": 4,
-      "title": "CUDA 的诞生与通用计算革命",
-      "slide_type": "concept_breakdown",
-      "key_points": [
-        "2006 年 NVIDIA 推出 CUDA，使 GPU 计算独立于图形 API。",
-        "CUDA 让开发者能够使用熟悉的 C/C++ 等语言编写 GPU 程序。",
-        "CUDA 加速了科学模拟（流体动力学、能源传输）和商业应用（数据库、分析）。",
-        "GPU 的可编程性推动了图像分类、生成式 AI（扩散模型、大语言模型）等新算法的发展。"
-      ],
-      "layout_zone": "center",
-      "visual_spec": {
-        "layout": "header_and_bullets",
-        "code_badge": "CUDA：让 GPU 计算独立于图形 API"
-      },
-      "visual_action": "",
-      "narration": "2006 年 CUDA 的推出是计算领域的里程碑。在此之前，利用 GPU 进行计算需要借助图形 API，如 OpenGL 或 DirectX，将计算伪装成渲染任务，这非常繁琐且低效。CUDA 彻底改变了这一局面，它提供了一个通用的编程模型，让开发者可以直接使用 C、C++ 等语言编写在 GPU 上运行的程序，而无需了解图形管线。这大大降低了 GPU 编程的门槛，使得科学家和工程师能够轻松地将计算密集型任务迁移到 GPU 上。从那时起，CUDA 和 GPU 计算被用于加速几乎所有类型的计算负载：从流体动力学、能源传输等科学模拟，到数据库、分析等商业应用。更重要的是，GPU 的能力和可编程性成为了新算法和技术的基石，从图像分类到生成式人工智能，如扩散模型和大语言模型，都离不开 GPU 的并行计算能力。",
-      "audio_file": "E:\\CudaStudy\\output\\audio\\sec_001_introduction_slide_4.mp3",
-      "audio_duration": 68.784,
-      "action_duration": 68.784,
-      "pause_buffer": 3.5,
-      "total_beat_duration": 72.284,
-      "start_time": 221.292,
-      "end_time": 293.576
-    },
-    {
-      "beat_id": 5,
-      "slide_id": 5,
-      "title": "线程级并行：CPU 与 GPU 的执行模型对比",
-      "slide_type": "concept_breakdown",
-      "key_points": [
-        "CPU 擅长快速执行串行线程，并能并行执行几十个线程。",
-        "GPU 擅长同时执行数千个线程，牺牲单线程性能以换取总吞吐量。",
-        "GPU 通过大量线程隐藏内存延迟，实现高吞吐量。",
-        "这种差异决定了编程模型：CPU 程序注重减少延迟，GPU 程序注重最大化并行度。"
-      ],
-      "layout_zone": "center",
-      "visual_spec": {
-        "layout": "header_and_bullets",
-        "code_badge": "CPU：延迟导向；GPU：吞吐导向"
-      },
-      "visual_action": "",
-      "narration": "让我们进一步对比 CPU 和 GPU 的执行模型。CPU 被设计为尽可能快地执行一个串行操作序列，即一个线程。它通过乱序执行、分支预测、大容量缓存等技术来降低延迟。同时，CPU 也能并行执行几十个线程，比如通过超线程或多核。但 GPU 的设计目标截然不同：它要同时执行数千个线程。GPU 的每个线程相对简单，单线程性能较低，但通过海量线程并行，总吞吐量极高。当一些线程等待内存时，GPU 可以切换到其他线程继续计算，从而隐藏内存延迟。这种模型要求程序具有高度的数据并行性。因此，在 GPU 上编程时，我们需要将问题分解成许多可以并行执行的小任务，而不是依赖单个线程的快速执行。理解这一点是编写高效 CUDA 程序的关键。",
-      "audio_file": "E:\\CudaStudy\\output\\audio\\sec_001_introduction_slide_5.mp3",
-      "audio_duration": 66.408,
-      "action_duration": 66.408,
-      "pause_buffer": 3.5,
-      "total_beat_duration": 69.908,
-      "start_time": 293.576,
-      "end_time": 363.484
-    },
-    {
-      "beat_id": 6,
-      "slide_id": 6,
-      "title": "总结：GPU 计算的核心优势与适用场景",
+      "beat_id": 4,
+      "index": 4,
+      "title": "一句话记住本质与小白课后自测",
       "slide_type": "summary_best_practice",
       "key_points": [
-        "GPU 从图形专用硬件演变为通用并行计算引擎，CUDA 是这一转变的关键。",
-        "GPU 在相似功耗和价格下提供更高的指令吞吐量和内存带宽。",
-        "GPU 微架构将更多晶体管用于数据处理，适合高度并行计算。",
-        "GPU 通过数千线程并行隐藏延迟，实现高吞吐量，适合数据并行任务。",
-        "GPU 计算已广泛应用于科学、商业和人工智能领域。"
+        "极简口诀：复杂串行找老教授(CPU)，海量简单活找小学生(GPU)！",
+        "核心指标：CPU 专攻低延迟（单任务极快），GPU 专攻高吞吐（总数据量极大）。",
+        "小白自测：如果一个任务只有 5 行代码但包含 10 个层层嵌套的 if-else，该用 CPU 还是 GPU？"
       ],
-      "layout_zone": "center",
+      "layout": "collision_animation",
       "visual_spec": {
-        "layout": "summary_and_checklist",
-        "code_badge": "GPU 计算：高吞吐、多线程、数据并行"
+        "layout": "collision_animation",
+        "code_badge": "",
+        "scene_plan": {
+          "schema": "plan-v2",
+          "kind": "boxes",
+          "slide_id": 4,
+          "title": "本讲心智清单与小白速记口诀",
+          "subtitle": "认清任务本质，合理分工协同",
+          "figure": {
+            "nodes": [
+              {
+                "id": "n1",
+                "label": "CPU 核心领域：复杂逻辑 / 低延迟 / 操作系统"
+              },
+              {
+                "id": "n2",
+                "label": "GPU 核心领域：矩阵运算 / 高吞吐 / 图像与AI"
+              },
+              {
+                "id": "n3",
+                "label": "黄金口诀：教授主控指方向，万人工人齐落笔"
+              }
+            ],
+            "edges": [
+              [
+                "n1",
+                "n3",
+                "发令"
+              ],
+              [
+                "n2",
+                "n3",
+                "执行"
+              ]
+            ]
+          },
+          "steps": [
+            {
+              "heading": "复盘 1：延迟导向 vs 吞吐导向",
+              "bullets": [
+                "不再把核多当做唯一指标，看清芯片解决的核心矛盾。"
+              ],
+              "focus": [
+                0
+              ],
+              "narration": "永远记住：CPU 是延迟导向，为单线程极速而生；GPU 是吞吐导向，为海量并行数据而生。"
+            },
+            {
+              "heading": "复盘 2：自测题揭晓",
+              "bullets": [
+                "复杂嵌套分支：CPU 完胜！因为小学生最怕各走各的分岔路。"
+              ],
+              "focus": [
+                1
+              ],
+              "narration": "刚才的小白自测题答案就是 CPU！小学生最怕遇到分支分岔，下一节我们将用大巴车的比喻揭开这个惊天秘密。"
+            },
+            {
+              "heading": "复盘 3：异构计算初识完毕",
+              "bullets": [
+                "恭喜你迈出了 CUDA 体系结构的第一步，轻松建立第一层心智！"
+              ],
+              "focus": [
+                2
+              ],
+              "narration": "恭喜你！不用看任何天书公式，你已经完全吃透了 GPU 计算最底层的存在哲学。下节课我们继续进阶！"
+            }
+          ]
+        }
       },
-      "visual_action": "",
-      "narration": "最后，我们来总结本节的核心内容。GPU 最初是为 3D 图形设计的固定功能硬件，经过多代演进变得可编程，并在 2006 年通过 CUDA 实现了通用计算。GPU 的核心优势在于：在相似的价格和功耗范围内，它能提供比 CPU 高得多的指令吞吐量和内存带宽。这源于其微架构设计：GPU 将更多晶体管用于数据处理单元，而非缓存和控制逻辑，从而能够同时执行数千个线程。这种设计牺牲了单线程性能，但换来了巨大的总吞吐量，非常适合数据并行任务。如今，GPU 计算已广泛应用于科学模拟、商业分析、图像分类和生成式 AI 等领域。作为开发者，理解 CPU 和 GPU 的设计哲学差异，是编写高效并行程序的基础。希望同学们牢记这些核心概念，并在后续课程中深入实践。",
-      "audio_file": "E:\\CudaStudy\\output\\audio\\sec_001_introduction_slide_6.mp3",
-      "audio_duration": 68.064,
-      "action_duration": 68.064,
-      "pause_buffer": 3.5,
-      "total_beat_duration": 71.564,
-      "start_time": 363.484,
-      "end_time": 435.048
+      "scene_plan": {
+        "schema": "plan-v2",
+        "kind": "boxes",
+        "slide_id": 4,
+        "title": "本讲心智清单与小白速记口诀",
+        "subtitle": "认清任务本质，合理分工协同",
+        "figure": {
+          "nodes": [
+            {
+              "id": "n1",
+              "label": "CPU 核心领域：复杂逻辑 / 低延迟 / 操作系统"
+            },
+            {
+              "id": "n2",
+              "label": "GPU 核心领域：矩阵运算 / 高吞吐 / 图像与AI"
+            },
+            {
+              "id": "n3",
+              "label": "黄金口诀：教授主控指方向，万人工人齐落笔"
+            }
+          ],
+          "edges": [
+            [
+              "n1",
+              "n3",
+              "发令"
+            ],
+            [
+              "n2",
+              "n3",
+              "执行"
+            ]
+          ]
+        },
+        "steps": [
+          {
+            "heading": "复盘 1：延迟导向 vs 吞吐导向",
+            "bullets": [
+              "不再把核多当做唯一指标，看清芯片解决的核心矛盾。"
+            ],
+            "focus": [
+              0
+            ],
+            "narration": "永远记住：CPU 是延迟导向，为单线程极速而生；GPU 是吞吐导向，为海量并行数据而生。"
+          },
+          {
+            "heading": "复盘 2：自测题揭晓",
+            "bullets": [
+              "复杂嵌套分支：CPU 完胜！因为小学生最怕各走各的分岔路。"
+            ],
+            "focus": [
+              1
+            ],
+            "narration": "刚才的小白自测题答案就是 CPU！小学生最怕遇到分支分岔，下一节我们将用大巴车的比喻揭开这个惊天秘密。"
+          },
+          {
+            "heading": "复盘 3：异构计算初识完毕",
+            "bullets": [
+              "恭喜你迈出了 CUDA 体系结构的第一步，轻松建立第一层心智！"
+            ],
+            "focus": [
+              2
+            ],
+            "narration": "恭喜你！不用看任何天书公式，你已经完全吃透了 GPU 计算最底层的存在哲学。下节课我们继续进阶！"
+          }
+        ],
+        "duration": 35.08,
+        "windows": [
+          {
+            "start": 0.0,
+            "end": 10.992
+          },
+          {
+            "start": 10.992,
+            "end": 22.296
+          },
+          {
+            "start": 22.296,
+            "end": 33.48
+          }
+        ]
+      },
+      "narration": "永远记住：CPU 是延迟导向，为单线程极速而生；GPU 是吞吐导向，为海量并行数据而生。 刚才的小白自测题答案就是 CPU！小学生最怕遇到分支分岔，下一节我们将用大巴车的比喻揭开这个惊天秘密。 恭喜你！不用看任何天书公式，你已经完全吃透了 GPU 计算最底层的存在哲学。下节课我们继续进阶！",
+      "audio_file": "E:\\CudaStudy\\output\\audio\\sec_001_introduction_s04_steps_eab5d2bb44.mp3",
+      "audio_duration": 33.48,
+      "pause_buffer": 2.2,
+      "total_beat_duration": 35.68,
+      "start_time": 124.032,
+      "end_time": 159.712,
+      "cues": [
+        {
+          "start": 124.032,
+          "end": 130.079,
+          "text": "永远记住：CPU 是延迟导向，为单线程极速而生；"
+        },
+        {
+          "start": 130.079,
+          "end": 135.024,
+          "text": "GPU 是吞吐导向，为海量并行数据而生。"
+        },
+        {
+          "start": 135.024,
+          "end": 138.476,
+          "text": "刚才的小白自测题答案就是 CPU！"
+        },
+        {
+          "start": 138.476,
+          "end": 141.248,
+          "text": "小学生最怕遇到分支分岔，"
+        },
+        {
+          "start": 141.248,
+          "end": 146.328,
+          "text": "下一节我们将用大巴车的比喻揭开这个惊天秘密。"
+        },
+        {
+          "start": 146.328,
+          "end": 147.317,
+          "text": "恭喜你！"
+        },
+        {
+          "start": 147.317,
+          "end": 149.788,
+          "text": "不用看任何天书公式，"
+        },
+        {
+          "start": 149.788,
+          "end": 155.04,
+          "text": "你已经完全吃透了 GPU 计算最底层的存在哲学。"
+        },
+        {
+          "start": 155.04,
+          "end": 157.512,
+          "text": "下节课我们继续进阶！"
+        }
+      ]
     }
   ]
 }

@@ -196,7 +196,7 @@ FORCE_REGENERATE = False
 DEFAULT_PDF_PATH = BASE_DIR / "cuda-programming-guide.pdf"
 
 # Bump when deck/scene schemas change so on-disk caches are invalidated.
-SCHEMA_VERSION = "2026.11-content-v10"
+SCHEMA_VERSION = "2026.11-pedagogy-v1"
 
 # Bump when subtitle layout/segmentation changes, so already-rendered videos get
 # re-composited (clips are reused; only SRT + burn are redone).

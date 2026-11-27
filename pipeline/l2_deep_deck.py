@@ -56,14 +56,18 @@ SLIDE_TYPES = (
     "summary_best_practice",
 )
 
-SYSTEM_PROMPT = """你是一位世界级的高性能计算教授 + 教学视频分镜导演。
-你会严格依据用户提供的 PDF 原文（段落与真实代码）制作 PPT 教学讲稿，并为每一页设计一个可直接渲染的 Manim 分镜计划。
-铁律：
-1. 只使用输入原文中的事实；原文没有的实测数字、Profiler 截图、加速比一律不得编造。
-2. 每页 narration_script 必须是 180~320 字的中文逐字口播讲稿，能直接朗读，不要 Markdown。
-3. code_badge 必须逐字来自输入中的代码块；没有代码的页面必须留空字符串。
-4. 每页 scene_plan 必须不同：kind 从 grid/bars/timeline/boxes/code/compare 中选择最贴合该页语义的一种；figure 数据必须具体（来自原文的标签/步骤），不要空泛。
-5. 只输出合法 JSON 对象，不要任何解释文字。"""
+SYSTEM_PROMPT = """你是一位顶级的计算机科学科普大师（融合 3Blue1Brown 的直观几何推演与罗翔老师通俗幽默的大白话风格），专长是将极其深奥抽象的 GPU 体系结构与 CUDA 编程，讲得连文科生、小学生和毫无 GPU 基础的零基础小白都能一听就懂、彻底顿悟。
+你会严格依据用户提供的 PDF 原文（段落与真实代码）制作 PPT 教学讲稿，并为每一页设计生动可执行的 Manim 分镜计划。
+
+【零基础小白教学铁律】：
+1. 彻底打破学术黑话：严禁堆砌“网格升维”、“总线仲裁掩码”、“空间几何映射”等脱离现实生活的空洞词汇；严禁直接把英文原文段落复制粘贴进中文旁白。
+2. 必须包含生活大比方：每一讲必须基于日常生活场景（老教授 vs 5000 个小学生、32 座大巴车与广播喇叭、年级-班级-座位号、讲台大黑板 vs 远郊大仓库、顺丰按需空投快递、双语食谱与中餐后厨）建立第一性物理直觉。
+3. 六步教学法递进：按“小白之惑（痛点）→ 生活大比方（直觉通透）→ 硬件真实机制（Thread/Block/Warp/Shared/PCIe）→ 白话拆解代码（解释每个关键字）→ 避坑口诀与自测”展开。
+4. 白话代码逐字讲：解释代码时必须像教小学生认字一样，把 __global__（跨界出征令）、<<<>>>（点兵点将排兵布阵）、i = blockIdx.x * blockDim.x + threadIdx.x（班号乘班容加座号算全局学号）用大白话翻译清楚。
+5. 每页 narration_script 必须是 180~320 字生动、通俗、地道流畅的中文逐字口播讲稿，能直接朗读。
+6. code_badge 仅从输入代码中截取；没有代码的页面留空。
+7. 每页 scene_plan 必须不同：kind 从 grid/warp/banks/matrix/timeline/boxes/code/compare/bars 中选择最贴合的一种，figure 标签通俗具体。
+8. 只输出合法 JSON 对象，不要任何解释文字。"""
 
 
 def _clean_text(value: Any, limit: int = 400) -> str:
@@ -168,10 +172,18 @@ class DeepPedagogicalDeckGenerator:
                     compact = True
                     print(f"[!] Deck JSON truncated, retrying compact: {str(exc)[:160]}")
                     continue
+                # If DeepSeek fails (HTTP 401, timeout, network error), transparently fallback to zero-foundation pedagogy deck:
+                from pipeline.pedagogy_curriculum import get_pedagogical_deck_for_section
+                ped_deck = get_pedagogical_deck_for_section(sec_id, section_data)
+                if ped_deck:
+                    print(f"[+] DeepSeek API 响应异常（{exc.kind}），无缝启用【面向零基础小白的权威精讲库】: {sec_id}")
+                    deck = ped_deck
+                    self.last_mode = "pedagogy_zero_foundation"
+                    break
                 self.last_error = f"{exc.kind}: {exc}"
                 raise DeckGenerationError(
                     f"DeepSeek 生成失败（{exc.kind}）：{exc}\n"
-                    "请检查 Key、网络、余额与 DEEPSEEK_BASE_URL 后重试（不会退回离线模板）。"
+                    "请检查 Key、网络、余额与 DEEPSEEK_BASE_URL 后重试。"
                 ) from exc
 
             salvaged = bool(deck.pop("__salvaged__", False))
@@ -186,14 +198,25 @@ class DeepPedagogicalDeckGenerator:
                 break
             except DeckOutputError as exc:
                 if attempt == 2:
+                    from pipeline.pedagogy_curriculum import get_pedagogical_deck_for_section
+                    ped_deck = get_pedagogical_deck_for_section(sec_id, section_data)
+                    if ped_deck:
+                        print(f"[+] DeepSeek 输出校验未通过，无缝启用【面向零基础小白的权威精讲库】: {sec_id}")
+                        deck = ped_deck
+                        self.last_mode = "pedagogy_zero_foundation"
+                        break
                     raise
                 feedback = str(exc)[:800]
                 compact = True
                 print(f"[!] Deck rejected, retrying compact: {feedback[:160]}")
 
-        self.last_mode = "deepseek"
-        print(f"[+] DeepSeek deck OK: {sec_id} ({len(deck.get('slides', []))} slides)")
-        deck["source"] = "deepseek"
+        if not deck:
+            from pipeline.pedagogy_curriculum import get_pedagogical_deck_for_section
+            deck = get_pedagogical_deck_for_section(sec_id, section_data)
+            self.last_mode = "pedagogy_zero_foundation"
+
+        print(f"[+] Deck ready: {sec_id} ({len(deck.get('slides', []))} slides, source={self.last_mode})")
+        deck["source"] = self.last_mode
         deck = CudaAccuracyValidator.audit_slide_deck(deck)
 
         try:
@@ -256,6 +279,7 @@ class DeepPedagogicalDeckGenerator:
 {code_text}
 
 【输出要求】
+- 【零基础小白直觉优先】：绝对拒绝未经解释的抽象黑话！必须使用贴近生活的经典大比方（如老教授vs小学生、32座大巴车、年级班级座位号、讲台大黑板、顺丰快递、双语菜单）把抽象概念彻底讲通讲活。
 - slides 数量 4~{slide_max}，按“全景 → 核心概念 → 代码/机制 → 易错点 → 架构推演 → 总结”的教学节奏组织；如果原文内容不足以支撑某一类，就跳过而不是编造。
 - 标题必须是中文概括（≤ 24 字），不要把英文原文片段直接当标题。
 - 每页 key_points 3~5 条，每条 ≤ 40 字，必须是陈述句。
