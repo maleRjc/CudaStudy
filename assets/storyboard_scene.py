@@ -139,29 +139,7 @@ class StoryboardScene(CUDAThemeScene):
             rect.move_to([0, -0.02, 0])
             accent = Line([-6.5, 1.67, 0], [-5.6, 1.67, 0], color=CYAN, stroke_width=3)
         self.add(rect, accent)
-
-        glow = RoundedRectangle(
-            corner_radius=0.12,
-            width=rect.width,
-            height=rect.height,
-            color=CYAN,
-            fill_opacity=0.0,
-            stroke_width=2.0,
-            stroke_opacity=0.0,
-        ).move_to(rect.get_center())
-        self.stage_glow = glow
         self.stage_rect = rect
-        self.add(glow)
-
-        scan = Line(
-            [rect.get_left()[0] + 0.08, rect.get_center()[1] - rect.height / 2 + 0.05, 0],
-            [rect.get_left()[0] + 0.08, rect.get_center()[1] + rect.height / 2 - 0.05, 0],
-            color=CYAN,
-            stroke_width=2.0,
-            stroke_opacity=0.0,
-        )
-        self.scan_line = scan
-        self.add(scan)
 
     def _build_progress(self):
         self.progress_dots = VGroup()
@@ -237,25 +215,7 @@ class StoryboardScene(CUDAThemeScene):
             self.wait(remaining)
 
     def _ambient_until(self, end: float):
-        """Pulse/scan while waiting; never cross the window end."""
-        while self.renderer.time < end - 1.5:
-            self.wait(1.1)
-            try:
-                self.play(self.stage_glow.animate.set_stroke(opacity=0.4), run_time=0.3)
-                left = self.stage_rect.get_left()[0] + 0.08
-                right = self.stage_rect.get_right()[0] - 0.08
-                self.scan_line.move_to([left, self.stage_rect.get_center()[1], 0])
-                self.play(
-                    self.scan_line.animate.move_to([right, self.stage_rect.get_center()[1], 0]).set_stroke(opacity=0.35),
-                    run_time=0.7,
-                )
-                self.play(
-                    self.scan_line.animate.set_stroke(opacity=0.0),
-                    self.stage_glow.animate.set_stroke(opacity=0.0),
-                    run_time=0.25,
-                )
-            except Exception:
-                break
+        """Hold the stage steady while narration plays; no distracting edge flicker."""
         self._wait_until(end)
 
     def _figure_center(self):
@@ -817,27 +777,6 @@ class StoryboardScene(CUDAThemeScene):
     # ==================================================================
     def _ambient(self, seconds: float, figure, step):
         remaining = max(0.0, seconds)
-        while remaining > 0.2:
-            chunk = min(3.2, remaining)
-            settle = max(0.4, chunk * 0.55)
-            self.wait(settle)
-            remaining -= settle
-            if remaining > 0.5:
-                try:
-                    self.play(self.stage_glow.animate.set_stroke(opacity=0.45), run_time=0.35)
-                    left = self.stage_rect.get_left()[0] + 0.08
-                    right = self.stage_rect.get_right()[0] - 0.08
-                    self.scan_line.move_to([left, self.stage_rect.get_center()[1], 0])
-                    self.play(
-                        self.scan_line.animate.move_to([right, self.stage_rect.get_center()[1], 0]).set_stroke(opacity=0.4),
-                        run_time=0.9,
-                    )
-                    self.play(
-                        self.scan_line.animate.set_stroke(opacity=0.0),
-                        self.stage_glow.animate.set_stroke(opacity=0.0),
-                        run_time=0.35,
-                    )
-                    remaining -= 1.6
-                except Exception:
-                    pass
+        if remaining > 0.02:
+            self.wait(remaining)
 
