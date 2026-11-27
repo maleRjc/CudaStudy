@@ -1,419 +1,612 @@
 """
-Layer 2 (Deep Pedagogical Deck Generator):
-Transforms VERBATIM technical text and code from any section of the PDF into an
-exhaustive, comprehensive, and clear PPT lecture slide deck (Markdown & JSON).
-Features:
-- Analyzes section length, technical depth, sub-headings, and code snippets
-- Synthesizes 4 to 12 slides per section depending on the real content
-- Connects to DeepSeek API with intelligent fallbacks
-- Ensures every slide has thorough, teaching-oriented spoken lecture scripts (150-300 words)
-- Isolates key concept bottlenecks for Manim 3Blue1Brown animated rendering
+Layer 2: Deep pedagogical deck generation, now driven by DeepSeek.
+
+Contract produced by this layer (one object per section):
+
+{
+  "sec_id": "...", "topic": "...", "source": "deepseek",
+  "slides": [
+    {
+      "slide_id": 1,
+      "title": "...",
+      "slide_type": "title_overview | concept_breakdown | code_diff | manim_physics_demo | ...",
+      "key_points": ["...", "...", "..."],
+      "narration_script": "180~320 字逐字讲稿",
+      "visual_spec": {
+        "layout": "...",
+        "code_badge": "仅在原文中真实出现的代码行",
+        "scene_plan": {kind, title, subtitle, figure, steps:[{heading, bullets, focus}]}
+      }
+    }
+  ]
+}
+
+Every slide gets its own ``scene_plan`` so the Manim layer can render a
+*different* animation per slide instead of repeating one scene for the chapter.
 """
 
+from __future__ import annotations
+
+import difflib
+import hashlib
 import json
-import math
 import re
 from pathlib import Path
-from typing import Dict, Any, List, Optional
-import requests
+from typing import Any, Dict, List, Optional
 
 import sys
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import config
 from pipeline.cuda_validator import CudaAccuracyValidator
+from pipeline.deepseek_client import DeepSeekClient, DeepSeekError, DeepSeekUnavailable
+from pipeline.storyboard import choose_kind, normalize_plan
+
+SLIDE_TYPES = (
+    "title_overview",
+    "concept_breakdown",
+    "code_diff",
+    "code_misconception",
+    "manim_physics_demo",
+    "memory_layout",
+    "profiler_timeline",
+    "benchmark_chart",
+    "metaphor_sketch",
+    "math_architecture_resolution",
+    "summary_best_practice",
+)
+
+SYSTEM_PROMPT = """你是一位世界级的高性能计算教授 + 教学视频分镜导演。
+你会严格依据用户提供的 PDF 原文（段落与真实代码）制作 PPT 教学讲稿，并为每一页设计一个可直接渲染的 Manim 分镜计划。
+铁律：
+1. 只使用输入原文中的事实；原文没有的实测数字、Profiler 截图、加速比一律不得编造。
+2. 每页 narration_script 必须是 180~320 字的中文逐字口播讲稿，能直接朗读，不要 Markdown。
+3. code_badge 必须逐字来自输入中的代码块；没有代码的页面必须留空字符串。
+4. 每页 scene_plan 必须不同：kind 从 grid/bars/timeline/boxes/code/compare 中选择最贴合该页语义的一种；figure 数据必须具体（来自原文的标签/步骤），不要空泛。
+5. 只输出合法 JSON 对象，不要任何解释文字。"""
+
+
+def _clean_text(value: Any, limit: int = 400) -> str:
+    text = re.sub(r"\s+", " ", str(value or "")).strip()
+    return text[:limit]
+
+
+def _norm_code(text: str) -> str:
+    return re.sub(r"\s+", "", str(text or ""))
+
+
+def _clean_points(values: Any, limit: int = 5, chars: int = 46) -> List[str]:
+    points: List[str] = []
+    if isinstance(values, (list, tuple)):
+        for value in values:
+            text = _clean_text(value, chars)
+            if text and text not in points:
+                points.append(text)
+            if len(points) >= limit:
+                break
+    return points
+
+
+def _json_block(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, indent=2)
+
+
+class DeckGenerationError(RuntimeError):
+    """Raised when a deck cannot be generated (missing key / API failure)."""
+
+
+class DeckOutputError(DeckGenerationError):
+    """Raised when the model output violates the deck contract (retryable)."""
 
 
 class DeepPedagogicalDeckGenerator:
-    """Generates detailed, comprehensive PPT slide lecture decks from raw PDF section content."""
+    """Builds a section deck with DeepSeek. No offline content fallback."""
 
     def __init__(self, api_key: Optional[str] = None):
-        self.api_key = api_key or config.DEEPSEEK_API_KEY
+        self.api_key = api_key or config.api_key()
         self.output_dir = config.OUTPUT_DIR / "deep_decks"
-        self.output_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            self.output_dir.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            pass
+        self.last_mode = "deepseek"
+        self.last_error = ""
 
-    def generate_deck_from_section(self, section_data: Dict[str, Any], force: bool = False) -> Dict[str, Any]:
-        """Generates an exhaustive, multi-slide PPT deck strictly following the section's actual text."""
+    # ------------------------------------------------------------------
+    def generate_deck_from_section(
+        self,
+        section_data: Dict[str, Any],
+        force: bool = False,
+        max_slides: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """
+        Generate a deck with DeepSeek.
+
+        There is deliberately **no offline fallback**: without a working API key
+        the pipeline stops with DeckGenerationError instead of producing a
+        template/grounded lecture that looks like real content.
+        """
         sec_id = section_data["sec_id"]
-        deck_file = self.output_dir / f"{sec_id}_deep_deck.json"
+        deck_file = self.output_dir / f"{sec_id}.json"
+        fingerprint = self._fingerprint(section_data)
 
-        # Check disk cache
         if not force and deck_file.exists():
             try:
-                with open(deck_file, "r", encoding="utf-8") as f:
-                    return json.load(f)
-            except Exception:
+                cached = json.loads(deck_file.read_text(encoding="utf-8"))
+                deck_cached = cached.get("deck", {})
+                if (
+                    cached.get("fingerprint") == fingerprint
+                    and deck_cached.get("slides")
+                    and deck_cached.get("source") == "deepseek"
+                ):
+                    print(f"[~] Deck cache hit: {sec_id} ({len(deck_cached['slides'])} slides)")
+                    self.last_mode = "deepseek"
+                    return deck_cached
+            except (OSError, json.JSONDecodeError):
                 pass
 
+        if not config.has_api_key():
+            raise DeckGenerationError(
+                "未配置 DEEPSEEK_API_KEY：本版本已移除无 Key 兜底模式。"
+                "请在项目根目录 .env 中填写 DEEPSEEK_API_KEY，或在 GUI 的 Key 输入框中填入后重试。"
+            )
 
-        # 1. Attempt DeepSeek LLM generation if API Key is valid
-        if self.api_key:
-            online_deck = self._call_deepseek_pedagogical_synthesizer(section_data)
-            if online_deck and len(online_deck.get("slides", [])) >= 3:
-                self._save_deck(online_deck, deck_file)
-                return online_deck
+        feedback = ""
+        deck = None
+        compact = True
+        for attempt in (1, 2):
+            try:
+                deck = self._llm_deck(
+                    section_data,
+                    max_slides=max_slides,
+                    feedback=feedback,
+                    compact=compact,
+                )
+            except DeepSeekError as exc:
+                if attempt == 1 and exc.kind in ("invalid_json", "truncated", "empty"):
+                    feedback = "上一次输出在 JSON 中途被截断。请压缩输出：只写 4 页、每页 3 个 steps、每步旁白 40~70 字。"
+                    compact = True
+                    print(f"[!] Deck JSON truncated, retrying compact: {str(exc)[:160]}")
+                    continue
+                self.last_error = f"{exc.kind}: {exc}"
+                raise DeckGenerationError(
+                    f"DeepSeek 生成失败（{exc.kind}）：{exc}\n"
+                    "请检查 Key、网络、余额与 DEEPSEEK_BASE_URL 后重试（不会退回离线模板）。"
+                ) from exc
 
-        # 2. Advanced Algorithmic Content Synthesizer (Zero-Failure Deterministic Engine)
-        # Deeply inspects the real paragraphs, code, and keywords in the section
-        deck = self._synthesize_full_depth_deck(section_data)
-        self._save_deck(deck, deck_file)
+            salvaged = bool(deck.pop("__salvaged__", False))
+            if salvaged and attempt == 1:
+                feedback = "上一次输出在 JSON 中途被截断。请压缩输出：只写 4 页、每页 3 个 steps、每步旁白 40~70 字。"
+                compact = True
+                print("[!] Deck output was salvaged from a truncated JSON; retrying compact.")
+                continue
+
+            try:
+                deck = self._validate_and_repair(deck, section_data, max_slides=max_slides)
+                break
+            except DeckOutputError as exc:
+                if attempt == 2:
+                    raise
+                feedback = str(exc)[:800]
+                compact = True
+                print(f"[!] Deck rejected, retrying compact: {feedback[:160]}")
+
+        self.last_mode = "deepseek"
+        print(f"[+] DeepSeek deck OK: {sec_id} ({len(deck.get('slides', []))} slides)")
+        deck["source"] = "deepseek"
+        deck = CudaAccuracyValidator.audit_slide_deck(deck)
+
+        try:
+            deck_file.write_text(
+                json.dumps({"fingerprint": fingerprint, "deck": deck}, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        except OSError as exc:
+            print(f"[!] Could not cache deck: {exc}")
+
+        print(f"[+] Deck ready: {len(deck['slides'])} slides for '{deck.get('topic')}' (source=deepseek)")
         return deck
 
-    def _save_deck(self, deck: Dict[str, Any], deck_file: Path):
-        # Run CUDA Technical Accuracy Validation
-        deck = CudaAccuracyValidator.audit_slide_deck(deck)
-        audit_res = deck.get("audit_status", {})
-        if not audit_res.get("passed", True):
-            print(f"[!] CUDA Validator Flagged {audit_res.get('issues_count', 0)} issues in '{deck.get('topic')}' - safety notes injected.")
-        else:
-            print(f"[+] CUDA Validator: 100% technical accuracy verified for '{deck.get('topic')}'.")
-
-        with open(deck_file, "w", encoding="utf-8") as f:
-            json.dump(deck, f, ensure_ascii=False, indent=2)
-        print(f"[+] Deep Deck Generated: {len(deck.get('slides', []))} slides for '{deck.get('topic')}' -> {deck_file.name}")
-
-    def _synthesize_full_depth_deck(self, section_data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Parses actual text paragraphs, headers, and code snippets from the PDF section.
-        Constructs a structured, high-density lecture deck with 4 to 10 slides.
-        """
-        title = section_data["title"]
-        sec_id = section_data["sec_id"]
-        full_text = section_data["full_text"]
-        code_snippets = section_data.get("code_snippets", [])
-        page_count = section_data.get("page_count", 1)
-
-        # Split text into clean paragraphs
-        raw_paras = [p.strip() for p in re.split(r"\n\s*\n", full_text) if len(p.strip()) > 40]
-        # Filter out purely page numbers or footer lines
-        paras = [p for p in raw_paras if not re.match(r"^---\s*Page\s*\d+\s*---$", p) and "CUDA Programming Guide" not in p]
-
-        # Determine target slide count based on content volume (1 slide per ~2 pages or ~600 words)
-        text_words = len(full_text.split())
-        target_slide_count = min(10, max(4, math.ceil(len(paras) / 3)))
-
-        slides = []
-
-        # ---------------- Slide 1: Introduction & Chapter Big Picture ----------------
-        intro_text = paras[0] if paras else f"本章全面讲解《CUDA 编程指南》中的核心内容：{title}。"
-        slides.append({
-            "slide_id": 1,
-            "title": f"第 {section_data.get('index', 1)} 讲 · {title}：架构全景与背景",
-            "slide_type": "title_overview",
-            "key_points": [
-                f"官方文档定位：{title} (第 {section_data.get('start_page')} - {section_data.get('end_page')} 页)",
-                "解决的核心工程问题：打破串行思维，释放 GPU 硬件原生算力",
-                f"本章技术深度：涵盖 {page_count} 页原文章节的深度解析与实操范式"
-            ],
-            "narration_script": (
-                f"欢迎来到 GPU 高性能计算与 CUDA 架构精讲。今天我们聚焦官方文档第 {section_data.get('start_page')} 页至第 {section_data.get('end_page')} 页的核心章节：{title}。"
-                f"在 GPU 异构计算的宏大世界里，这一章节具有承前启后的关键战略意义。"
-                f"原文指出：{intro_text[:180]}。"
-                f"很多初学者在阅读这部分文档时，往往因为缺少物理空间直觉而感到晦涩难懂。在接下来的课程中，我们将把冰冷的规格文本，转化为生动直观的空间图式，帮助大家真正吃透底层的每一个运行细节。"
-            ),
-            "visual_spec": {
-                "layout": "header_and_bullets",
-                "code_badge": f"// CUDA Guide: {title}",
-                "theme_accent": "title"
-            }
-        })
-
-        # Determine topic theme for multi-modal visual specs
-        t_low = (title + " " + full_text[:500]).lower()
-
-        # ---------------- Slide 2: Whiteboard Mental Model & Physical Analogy ----------------
-        if any(k in t_low for k in ["warp", "diverge", "branch"]):
-            meta_title = "Warp 锁步与分支分化心智模型"
-            meta_bullets = [
-                "32名考生 (Warp 32 Threads) 必须在同一时钟节拍答同一道题",
-                "遇 if/else 选择题：选 A 同学作答，选 B 同学被硬件强制趴在桌上发呆",
-                "选 B 同学作答时，选 A 同学趴着发呆，时间被白白浪费一倍！",
-                "根本解法：让同一 Warp 保持相同控制流，消灭任何执行空转"
+    # ------------------------------------------------------------------
+    def _fingerprint(self, section_data: Dict[str, Any]) -> str:
+        payload = "|".join(
+            [
+                config.SCHEMA_VERSION,
+                section_data.get("sec_id", ""),
+                str(len(section_data.get("full_text", ""))),
+                _norm_code(section_data.get("full_text", ""))[:6000],
             ]
-            meta_punch = "消灭分支分化，就是消灭硬件发呆，算力瞬间翻倍"
-        elif any(k in t_low for k in ["bank", "shared", "smem"]):
-            meta_title = "Shared Memory 32-Bank 银行办事心智模型"
-            meta_bullets = [
-                "片上共享内存拥有 32 个独立物理窗口 (Bank 0 到 31)",
-                "无冲突理想态：32 名客户每人前往一个专属窗口，并行瞬间办结",
-                "Bank Conflict 灾难：多名客户非要同时挤在 Bank 0 窗口，被迫排队",
-                "经典解法：Padding 错开列对角线，实现 1 对 1 物理独占"
-            ]
-            meta_punch = "32 窗口独占无排队，片上缓存带宽才能跑满几 TB/s"
-        elif any(k in t_low for k in ["stream", "async", "overlap"]):
-            meta_title = "多流流水线：边洗菜边炒菜的双缓冲模型"
-            meta_bullets = [
-                "默认单流模式：洗菜 -> 炒菜 -> 上菜，燃气灶大量时间空烧停滞",
-                "多流异步模式：第一盘炒菜时，第二盘菜已经在流水线上高速清洗",
-                "PCIe 传输引擎与 SM 计算核心互不干扰，具备独立的物理通道",
-                "终极形态：计算耗时完全覆盖搬运耗时，外部感知延迟降为零"
-            ]
-            meta_punch = "多流异步流水线，把耗时显存传输完全隐形在算力之下"
-        else:
-            meta_title = "网格升维：从单车道排队到多维蜂窝空间"
-            meta_bullets = [
-                "CPU 串行循环思维：单个指针在 1D 线性数组上一步一步向后挪",
-                "GPU 空间升维思维：建立 Grid 与 Block 二维/三维立体矩阵点阵",
-                "每一个数据元素，在诞生之初就已经有唯一绑定的硬件线程",
-                "核心公式：blockIdx.x * blockDim.x + threadIdx.x 空间平铺"
-            ]
-            meta_punch = "从时间轴的一维步进，彻底跃迁为空间点阵的瞬间全员并发"
+        )
+        return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
 
-        slides.append({
-            "slide_id": 2,
-            "title": f"心智模型与物理直觉 · {meta_title}",
-            "slide_type": "metaphor_sketch",
-            "key_points": meta_bullets,
-            "narration_script": (
-                f"在深入复杂的代码细节前，我们先建立一个清晰的直觉心智模型。技术问题看似抽象，本质上都对应着物理世界的日常规律。"
-                f"我们来看屏幕上的白板比喻：{meta_bullets[0]}。{meta_bullets[1]}。"
-                f"{meta_bullets[2]}。{meta_punch}。"
-                f"带着这种形象的物理图景，接下来大家再看代码和硬件架构时，就再也不会感到云里雾里了。"
-            ),
-            "visual_spec": {
-                "metaphor_title": meta_title,
-                "punchline": meta_punch
-            }
-        })
+    # ------------------------------------------------------------------
+    # LLM path
+    # ------------------------------------------------------------------
+    def _llm_deck(
+        self,
+        section_data: Dict[str, Any],
+        max_slides: Optional[int] = None,
+        feedback: str = "",
+        compact: bool = False,
+    ) -> Dict[str, Any]:
+        client = DeepSeekClient(api_key=self.api_key)
+        if not client.available:
+            raise DeepSeekUnavailable("no api key")
 
-        # ---------------- Slide 3: 3Blue1Brown-style Manim Physics Simulation ----------------
-        slides.append({
-            "slide_id": 3,
-            "title": "物理微架构动态推演：芯片底层的空间博弈",
-            "slide_type": "manim_physics_demo",
-            "key_points": [
-                "空间几何映射：线程在 SM 内部的高速脉冲推进",
-                "硬件仲裁过程：总线事务的合并、排队与掩码锁定",
-                "顿悟时刻：通过动态可视化透视黑盒硬件的真实运转"
-            ],
-            "narration_script": (
-                f"现在进入核心的微架构动态推演环节。为了透视芯片内部的物理微观过程，我们借助 Manim 动画引擎展开高维物理推演。"
-                f"请大家紧盯屏幕：色块代表硬件物理资源，光束流向代表纳秒级时钟周期内发生的总线仲裁。"
-                f"观察冲突发生时的警告闪烁，以及随后重构对齐后满负荷并行的流畅流动。"
-                f"通过直观的几何运动，抽象的体系结构规则瞬间变成了触手可及的物理规律。"
-            ),
-            "visual_spec": {
-                "layout": "collision_animation",
-                "code_badge": code_snippets[0][:150] if code_snippets else "int idx = blockIdx.x * blockDim.x + threadIdx.x;",
-                "theme_accent": "manim"
-            }
-        })
+        code_blocks = section_data.get("code_snippets") or []
+        code_text = "\n\n".join(f"```cpp\n{block[:1200]}\n```" for block in code_blocks[:4]) or "（本节未提取到代码）"
+        paragraphs = section_data.get("paragraphs") or []
+        if not paragraphs:
+            paragraphs = [p for p in re.split(r"\n{2,}", section_data.get("full_text", "")) if len(p.strip()) > 40][:12]
+        corpus = "\n".join(f"[{i + 1}] {p[:520]}" for i, p in enumerate(paragraphs[:18]))
 
-        # ---------------- Slide 4: Side-by-Side Code Diff Card ----------------
-        if any(k in t_low for k in ["warp", "diverge"]):
-            bad_lines = ["if (tid % 2 == 0) {", "    result += compute_a();", "} else {", "    result += compute_b(); // 掩码发呆", "}"]
-            good_lines = ["// 方案：数据重排或按 warp 粒度分发", "int warp_id = tid / 32;", "if (warp_id % 2 == 0) {", "    result += compute_a(); // 0 分化", "}"]
-            b_tip, g_tip = "奇偶线程交替走不同分支，硬件被迫串行跑满2倍时间", "同 Warp 32 线程走完全一致控制流，算力吞吐瞬间打满"
-        elif any(k in t_low for k in ["bank", "shared"]):
-            bad_lines = ["__shared__ float s_data[32][32];", "int val = s_data[tid][0]; // 跨步32", "// 全部命中 Bank 0: 32路串行冲突！"]
-            good_lines = ["__shared__ float s_data[32][33]; // 对角填充", "int val = s_data[tid][0];", "// 错开物理列，100% 独占满速并发"]
-            b_tip, g_tip = "2D 数组步长恰好为 32，多线程同时争抢同一物理 Bank", "增加 1 列 Padding 改变内存步长，彻底根除 Bank 冲突"
-        else:
-            bad_lines = ["int idx = threadIdx.x; // 致命漏洞", "d_out[idx] = input[idx] * 2.0f;", "// 仅在单 Block 正常，多 Block 覆写数据！"]
-            good_lines = ["int idx = blockIdx.x * blockDim.x + threadIdx.x;", "if (idx < N) {", "    d_out[idx] = input[idx] * 2.0f;", "} // 边界严密防护"]
-            b_tip, g_tip = "忽略 blockIdx 导致多个 Block 争抢写同一物理显存地址", "跨 Block 空间全局平铺寻址，且严格添加 N 越界保护"
+        slide_cap = max_slides or config.MAX_SLIDES_PER_SECTION
+        slide_max = min(4, slide_cap)
+        step_min, step_max = (3, 3) if compact else (3, 4)
+        narr_min, narr_max = (40, 70) if compact else (45, 90)
+        prompt = f"""请为下面这一节技术文档制作教学 PPT 讲稿。
 
-        slides.append({
-            "slide_id": 4,
-            "title": "代码落地方案：朴素实现反例 vs 工业级生产规范",
-            "slide_type": "code_diff",
-            "key_points": [
-                "反例警示：看似跑通，但在高并发多块环境下的隐性奔溃",
-                "规范解法：严格遵循硬件对齐与无冲突原则的最佳写法",
-                "差异精髓：从变量声明、寻址折算到同步屏障的全方位对比"
-            ],
-            "narration_script": (
-                f"现在我们把理论落实到具体的 C++ 和 CUDA 代码实现上。请看屏幕上的左右分屏比对。"
-                f"左边红框是初学者最常写出的朴素反例：{b_tip}。"
-                f"而右边绿框是工业级生产规范写法：{g_tip}。"
-                f"大家可以对比看到，仅仅是几行关键语法和内存声明的微调，就能让代码从充满安全隐患的玩具，变成兼顾极端稳健与极致吞吐的生产级 Kernel。"
-            ),
-            "visual_spec": {
-                "bad_title": "朴素直觉实现 (隐患反例)",
-                "bad_code": bad_lines,
-                "bad_tip": b_tip,
-                "good_title": "工业级安全规范实现",
-                "good_code": good_lines,
-                "good_tip": g_tip
-            }
-        })
+【章节】{section_data.get('title')}
+【页码】P{section_data.get('start_page')}-P{section_data.get('end_page')}（共 {section_data.get('page_count')} 页）
 
-        # ---------------- Slide 5: Nsight Systems Timeline Trace OR Memory Layout ----------------
-        if any(k in t_low for k in ["bank", "shared", "coalesce"]):
-            s5_type = "memory_layout"
-            s5_title = "硬件物理分布：Shared Memory 32-Bank 冲突探测图"
-            s5_spec = {
-                "bank_title": "Shared Memory 32-Bank 硬件微架构物理分布与并发检测",
-                "stride": 2
-            }
-            s5_desc = "屏幕上展示了片上高速缓存 16 到 32 个物理 Bank 的排布。箭头清晰标出了线程访问的目标地址，红线标注了冲突点。"
-        else:
-            s5_type = "profiler_timeline"
-            s5_title = "性能追踪实录：NVIDIA Nsight Systems 并发时间线"
-            s5_spec = {
-                "timeline_title": "NVIDIA Nsight Systems GPU 真实时序追踪 (Trace Timeline)"
-            }
-            s5_desc = "屏幕上展示了来自 NVIDIA Nsight Systems 的真实追踪时间线。上面的默认流由于缺乏重叠，留下了大量气泡；下面的异步多流则实现了算力与传输的完美重叠。"
+【原文段落（按页顺序，已清洗）】
+{corpus}
 
-        slides.append({
-            "slide_id": 5,
-            "title": s5_title,
-            "slide_type": s5_type,
-            "key_points": [
-                "硬件探针视界：跳出代码本身，从 Profiler 视角审视运行时表现",
-                "空闲气泡捕捉：揪出那些白白浪费 GPU 功耗的等待周期",
-                "时序重叠黄金律：用异步流水线让计算与显存传输实现 100% 零间隙"
-            ],
-            "narration_script": (
-                f"空谈理论不足以服人，我们必须借助工业级分析器给出无可辩驳的证据。"
-                f"{s5_desc}"
-                f"通过直观的时间线切片，哪一个 Kernel 在什么时间启动、PCIe 搬运是否占用了 SM 周期，全部一目了然。"
-                f"学会在性能调优中使用 Profiler 时间线思维，是每一个高级 GPU 工程师的必修内功。"
-            ),
-            "visual_spec": s5_spec
-        })
+【原文中真实提取到的代码块】
+{code_text}
 
-        # ---------------- Slide 6: Empirical Benchmark Speedup Chart ----------------
-        slides.append({
-            "slide_id": 6,
-            "title": "性能实测基准：吞吐量与加速比对比",
-            "slide_type": "benchmark_chart",
-            "key_points": [
-                "基准实测数据：不同规模输入下的真实测试对比",
-                "加速倍率突破：优化后版本获得数倍到数十倍的算力吞吐跃升",
-                "物理极限逼近：显存带宽利用率与理论峰值算力充分打满"
-            ],
-            "narration_script": (
-                f"技术的最终说服力永远来自硬核的实测数字。我们对上述方案在不同数据规模下进行了严格的基准评测。"
-                f"屏幕上的对比柱状图清晰展示了性能的爆发式飞跃：在各类压力测试中，优化版 Kernel 相比朴素实现斩获了高达数倍的算力与带宽提升！"
-                f"这就是吃透体系结构、顺应硬件规律带来的真实红利——不花一分钱购买新显卡，仅靠架构重构，就能把现有硬件的原生潜能彻底榨干。"
-            ),
-            "visual_spec": {
-                "chart_title": f"{title} · 真实硬件性能基准测试 (Benchmark)",
-                "categories": ["小规模负载", "中等规模吞吐", "超大规模打满"],
-                "baseline_vals": [125.0, 240.0, 315.0],
-                "optimized_vals": [980.0, 1950.0, 2680.0],
-                "metric_unit": "吞吐算力 (GFLOPS)",
-                "speedup_text": "8.5x 吞吐爆发"
-            }
-        })
+【输出要求】
+- slides 数量 4~{slide_max}，按“全景 → 核心概念 → 代码/机制 → 易错点 → 架构推演 → 总结”的教学节奏组织；如果原文内容不足以支撑某一类，就跳过而不是编造。
+- 标题必须是中文概括（≤ 24 字），不要把英文原文片段直接当标题。
+- 每页 key_points 3~5 条，每条 ≤ 40 字，必须是陈述句。
+- 【禁止重复】不同 slide 不得复述同一组事实、同一段代码流程或同一句结论；相邻 step 必须推进新信息，禁止同义改写凑字数；总结页只做 3~5 条精炼提炼，不得整段复述前文。若原文有多个高度相似的示例，合并成一页对比讲清，不要逐页重复。
+- 【讲清概念】每页按“是什么 → 为什么/怎么发生 → 原文例子 → 边界或性能影响”展开；至少包含一个来自原文的具体事实、代码行或数字，禁止空泛套话。动画的 steps 要按机制推进（例如 Warp 先锁步、再分支、再收敛），而不是只换标题。
+- 每页的朗读内容由各 step 的 narration 顺序拼接而成；页面级 narration_script 可填同样的拼接结果或留空。
+- 每页 visual_spec.scene_plan 必须是不同分镜，steps {step_min}~{step_max} 个：
+  heading 是中文概念句（≤ 18 字），bullets 0~2 条（解释因果），focus 是整数数组（指向 figure 中要高亮的元素下标）。
+  **每个 step 必须包含 narration 字段（{narr_min}~{narr_max} 字）**：只讲这一步对应的内容，按顺序拼接后应基本等于整页 narration_script。
+  当 kind=code 时，focus 必须是代码行下标（0 表示 figure.lines 的第一行），并且该 step 的 narration 必须只讲这一行/这几行代码，不得提前讲后面的行。
+  每个 step 的 heading/bullets/narration 顺序必须一致。
+  focus 必须随步骤推进：grid 分块高亮（不要把全部单元塞给每一步），boxes 按数据流逐节点，compare 左右切换，timeline 逐行。
+- 优先使用概念专用图形（这决定动画是否“讲清楚”）：
+  * warp：Warp / SIMT / 分支分化 / 线程束
+  * banks：Shared Memory / Bank 冲突 / Padding
+  * coalesce：合并访存 / 跨步 / 总线事务
+  * matrix：分块矩阵 / GEMM / tile
+  * timeline：多流 / 异步 / 重叠
+  * code：逐行代码讲解（仅当原文确实提供了代码时使用；没有代码不要用）
+  * grid：线程层级 / 全局索引
+  * compare：反例 vs 规范
+  * bars：有真实数字的性能对比
+  * boxes：流程 / 架构数据流
+- figure 结构按 kind 提供：
+    grid:    {{"rows": int, "cols": int, "labels": [str]}}
+    warp:    {{"threads": 32}}
+    banks:   {{"stride": int}}
+    coalesce:{{"threads": 8}}
+    matrix:  {{"size": int, "tile": int}}
+    bars:    {{"items": [{{"label": str, "value": number, "unit": str}}]}}  ← 只允许原文有明确数字时使用
+    timeline:{{"rows": [{{"label": str, "segments": [{{"start": number, "end": number, "label": str}}]}}]}}
+    boxes:   {{"nodes": [{{"id": str, "label": str}}], "edges": [[id, id, label]]}}
+    code:    {{"lines": [str], "language": "CUDA C++"}}
+    compare: {{"left": {{"title": str, "lines": [str]}}, "right": {{"title": str, "lines": [str]}}}}
 
-        # ---------------- Slide 7: Summary & Cognitive Consolidation Checklist ----------------
-        slides.append({
-            "slide_id": 7,
-            "title": f"本讲总结与心智清单 · {title}",
-            "slide_type": "summary_best_practice",
-            "key_points": [
-                f"一句话核心结论：牢记 {title} 的底层物理本质与空间图式",
-                "架构避坑三步走：检查边界越界、检查对齐重叠、检查并发冲突",
-                "知识脉络延伸：带着清晰的多维心智，向更深邃的 GPU 架构高地进军"
-            ],
-            "narration_script": (
-                f"最后，我们对本讲所学进行全景沉淀。通过生活比喻、Manim 物理仿真、代码分屏比对、Nsight 时序追踪以及实测基准图表，"
-                f"相信大家对《CUDA 编程指南》中的 {title} 已经建立起立体、透彻且不可磨灭的心智图谱。"
-                f"请把今天总结的三条检查清单印在脑海中。在高性能计算的世界里，每一个时钟周期的节省，都来自于我们对底层微架构事实的深刻洞察。"
-                f"我们下节课程，继续探索 GPU 异构计算的壮丽宇宙！"
-            ),
-            "visual_spec": {
-                "layout": "summary_and_checklist",
-                "code_badge": "// 工业级 CUDA 核心工程心法",
-                "theme_accent": "summary"
-            }
-        })
-
-
-        return {
-            "chunk_id": sec_id,
-            "sec_id": sec_id,
-            "concept_id": sec_id,
-            "topic": title,
-            "curriculum_index": section_data.get("index", 1),
-            "page_range": f"P{section_data.get('start_page')}-P{section_data.get('end_page')}",
-            "page_count": page_count,
-            "target_duration_range": f"{len(slides) * 45 // 60} ~ {len(slides) * 60 // 60} 分钟",
-            "slides": slides
-        }
-
-    def _call_deepseek_pedagogical_synthesizer(self, section_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Invokes DeepSeek API to generate thorough, dynamic multi-slide deck from section verbatim text."""
-        url = f"{config.DEEPSEEK_BASE_URL.rstrip('/')}/chat/completions"
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json"
-        }
-
-        full_text_snippet = section_data["full_text"][:3500]
-        title = section_data["title"]
-
-        prompt = f"""你是一名世界顶尖的高性能计算教授与技术教育家。
-请根据以下来自官方《CUDA Programming Guide》第 {section_data.get('start_page')} 页的原文内容，不要做简陋的一笔带过，而是制作一套系统全面、极其详细、能够让初学者彻底讲透学懂的【PPT 教学讲稿 (Deep Slide Deck)】。
-
-【章节标题】: {title}
-【页码范围】: 第 {section_data.get('start_page')} 页至第 {section_data.get('end_page')} 页
-【PDF原文节选】:
-{full_text_snippet}
-
-【严格教学要求】:
-1. 深入挖掘文档实际内容，生成 5 到 8 页 PPT 幻灯片，覆盖该小节的方方面面。
-2. 每一页必须包含【极其详尽、通俗生动的讲师口播讲稿 (narration_script)】，字数要求 150 到 280 字，娓娓道来地讲透物理原理与心智模型，严禁任何偷工减料的一两句话概括！
-3. 其中必须有一页明确设置为 "slide_type": "manim_physics_demo"，用于触发底层硬件微架构的 3Blue1Brown 动态几何模拟。
-
-【严格 JSON 格式输出】:
+【输出 JSON 结构】
 {{
   "sec_id": "{section_data['sec_id']}",
-  "topic": "{title}",
+  "topic": "{section_data.get('title')}",
   "slides": [
     {{
       "slide_id": 1,
-      "title": "幻灯片大标题",
-      "slide_type": "title_overview | concept_breakdown | code_misconception | manim_physics_demo | math_architecture_resolution | summary_best_practice",
-      "key_points": ["核心要点1", "核心要点2", "核心要点3"],
-      "narration_script": "本页幻灯片的讲师逐字口播讲稿，字数在150字到280字之间，深入浅出、条理清晰地讲透本页内容，坚决杜绝一句话概括。",
+      "title": "本页标题（≤ 24 字）",
+      "slide_type": "title_overview | concept_breakdown | code_diff | manim_physics_demo | memory_layout | profiler_timeline | benchmark_chart | metaphor_sketch | math_architecture_resolution | summary_best_practice",
+      "key_points": ["...", "...", "..."],
+      "narration_script": "180~320 字逐字讲稿",
       "visual_spec": {{
-        "layout": "header_and_bullets | code_and_hardware_demo | collision_animation | math_formula_and_resolved_grid | summary_and_checklist",
-        "code_badge": "关键代码行或核心概念"
+        "layout": "collision_animation",
+        "code_badge": "",
+        "scene_plan": {{
+          "kind": "boxes",
+          "title": "本页标题",
+          "subtitle": "{section_data.get('title')}",
+          "figure": {{"nodes": [{{"id": "a", "label": "CPU"}}], "edges": []}},
+          "steps": [{{"heading": "...", "bullets": ["..."], "focus": [0], "narration": "本步骤专属旁白 {narr_min}~{narr_max} 字"}}]
+        }}
       }}
     }}
   ]
-}}
-"""
-        payload = {
-            "model": config.DEEPSEEK_MODEL,
-            "messages": [
-                {"role": "system", "content": "You are a master computer architecture educator. Always respond with valid JSON."},
-                {"role": "user", "content": prompt}
-            ],
-            "response_format": {"type": "json_object"},
-            "temperature": 0.4
+}}"""
+
+        if feedback:
+            prompt += (
+                "\n\n【上一次输出未通过校验，必须修正后重新输出】\n"
+                f"{feedback}\n"
+                "请重写整份 JSON，删除所有重复的句子/步骤/结论，并确保每页只讲一个新概念。"
+            )
+
+        return client.chat_json(SYSTEM_PROMPT, prompt, temperature=0.35, max_tokens=config.DEEPSEEK_MAX_TOKENS)
+
+    # ------------------------------------------------------------------
+    # Validation / repair
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _repair_code_focus(plan: Dict[str, Any]) -> None:
+        """Point each code step at the line its narration actually mentions."""
+        lines = (plan.get("figure") or {}).get("lines") or []
+        if not lines:
+            return
+
+        def line_score(index: int, text: str) -> int:
+            identifiers = set(re.findall(r"[A-Za-z_]\w{2,}", lines[index]))
+            return sum(1 for identifier in identifiers if identifier in text)
+
+        for step in plan.get("steps") or []:
+            text = " ".join(
+                [str(step.get("heading", ""))]
+                + [str(b) for b in (step.get("bullets") or [])]
+                + [str(step.get("narration", ""))]
+            )
+            current = [i for i in (step.get("focus") or []) if 0 <= i < len(lines)]
+            current_score = max((line_score(i, text) for i in current), default=0)
+            best_index, best_score = -1, 0
+            for index in range(len(lines)):
+                score = line_score(index, text)
+                if score > best_score:
+                    best_index, best_score = index, score
+            if best_index >= 0 and best_score > current_score:
+                step["focus"] = [best_index]
+
+    @staticmethod
+    def _check_repetition(slides: List[Dict[str, Any]]) -> None:
+        """Remove exact duplicate sentences, reject remaining repetition."""
+        seen = set()
+        removed = 0
+        for slide in slides:
+            plan = (slide.get("visual_spec") or {}).get("scene_plan") or {}
+            step_texts = []
+            for step in plan.get("steps") or []:
+                original = str(step.get("narration") or "").strip()
+                kept = []
+                for sentence in re.split(r"(?<=[。！？；;])", original):
+                    normalized = re.sub(r"[^\w\u4e00-\u9fff]", "", sentence).lower()
+                    if len(normalized) >= 14:
+                        if normalized in seen:
+                            removed += 1
+                            continue
+                        seen.add(normalized)
+                    kept.append(sentence)
+                shortened = "".join(kept).strip()
+                if original and len(shortened) >= 20:
+                    step["narration"] = shortened
+                step_texts.append(str(step.get("narration") or "").strip())
+            if step_texts:
+                slide["narration_script"] = " ".join(step_texts)
+        if removed:
+            print(f"[!] Removed {removed} duplicate sentence(s) from narration.")
+
+        entries = []
+        for slide in slides:
+            plan = (slide.get("visual_spec") or {}).get("scene_plan") or {}
+            for step in plan.get("steps") or []:
+                for sentence in re.split(r"(?<=[。！？；;])", str(step.get("narration") or "")):
+                    normalized = re.sub(r"[^\w\u4e00-\u9fff]", "", sentence).lower()
+                    if len(normalized) >= 14:
+                        entries.append((normalized, sentence.strip(), slide.get("title", ""), step.get("heading", "")))
+
+        exact = []
+        for index, (normalized, sentence, title, heading) in enumerate(entries):
+            for other, _, other_title, _ in entries[:index]:
+                if normalized == other:
+                    exact.append(f"「{sentence[:24]}」出现在 {title} / {heading}")
+                    break
+        if exact:
+            raise DeckOutputError(
+                "检测到跨页/跨步骤的完全重复句子：\n- "
+                + "\n- ".join(dict.fromkeys(exact))
+                + "\n请重写讲稿：每页只讲一个新概念，总结页只做精炼，不得复述前文。"
+            )
+
+        # Reusing the same code block / key points across separate slides is the
+        # main source of "same workflow explained again" duplicates.
+        code_sets = []
+        point_sets = []
+        for slide in slides:
+            visual = slide.get("visual_spec") or {}
+            plan = visual.get("scene_plan") or {}
+            lines = (plan.get("figure") or {}).get("lines") or [
+                line for line in str(visual.get("code_badge") or "").splitlines() if line.strip()
+            ]
+            normalized_lines = {re.sub(r"\s+", "", str(line)) for line in lines if str(line).strip()}
+            normalized_points = {
+                re.sub(r"[^\w\u4e00-\u9fff]", "", str(point)).lower()
+                for point in (slide.get("key_points") or [])
+                if str(point).strip()
+            }
+            code_sets.append((slide.get("slide_id"), slide.get("title", ""), normalized_lines))
+            point_sets.append((slide.get("slide_id"), slide.get("title", ""), normalized_points))
+
+        reused = []
+        for i in range(len(code_sets)):
+            for j in range(i + 1, len(code_sets)):
+                left, right = code_sets[i][2], code_sets[j][2]
+                if len(left) >= 3 and len(right) >= 3:
+                    union = left | right
+                    overlap = left & right
+                    if union and len(overlap) >= 3 and len(overlap) / len(union) >= 0.6:
+                        reused.append(
+                            f"第 {code_sets[i][0]} 页「{code_sets[i][1]}」与第 {code_sets[j][0]} 页「{code_sets[j][1]}」"
+                            f"复用了 {len(overlap)} 行相同代码"
+                        )
+        if reused:
+            raise DeckOutputError(
+                "检测到跨页复用同一段代码/流程：\n- "
+                + "\n- ".join(dict.fromkeys(reused))
+                + "\n请把不同页改成不同机制或不同阶段的讲解，不要重复同一段代码流程。"
+            )
+
+        near = []
+        for i in range(len(entries)):
+            for j in range(i + 1, len(entries)):
+                left, right = entries[i][0], entries[j][0]
+                if abs(len(left) - len(right)) > max(len(left), len(right)) * 0.25:
+                    continue
+                ratio = difflib.SequenceMatcher(None, left, right).ratio()
+                if ratio >= 0.90:
+                    near.append(
+                        f"「{entries[i][1][:22]}」≈「{entries[j][1][:22]}」"
+                        f"（{entries[i][2]} / {entries[j][2]}）"
+                    )
+        if len(near) >= 2:
+            raise DeckOutputError(
+                "检测到多处近重复讲解：\n- "
+                + "\n- ".join(dict.fromkeys(near[:4]))
+                + "\n请合并相似步骤、删除同义改写，确保每个 step 都推进新信息。"
+            )
+
+    @staticmethod
+    def _improve_focus(plan: Dict[str, Any]) -> None:
+        """Keep highlight moving when the model gives every step the same target."""
+        steps = plan.get("steps") or []
+        if len(steps) < 2:
+            return
+        kind = plan.get("kind")
+        figure = plan.get("figure") or {}
+        if kind == "grid":
+            count = int(figure.get("rows", 4)) * int(figure.get("cols", 8))
+        elif kind == "boxes":
+            count = len(figure.get("nodes") or [])
+        elif kind == "timeline":
+            count = len(figure.get("rows") or [])
+        elif kind == "compare":
+            count = 2
+        else:
+            return
+        if count < 2:
+            return
+
+        focuses = [tuple(sorted(set(step.get("focus") or []))) for step in steps]
+        if kind == "grid":
+            too_broad = all(len(focus) >= max(2, count * 0.6) for focus in focuses)
+            if len(set(focuses)) < len(focuses) or too_broad:
+                chunk = max(1, (count + len(steps) - 1) // len(steps))
+                for index, step in enumerate(steps):
+                    step["focus"] = list(range(index * chunk, min((index + 1) * chunk, count)))
+                return
+        if len(set(focuses)) < len(focuses):
+            for index, step in enumerate(steps):
+                step["focus"] = [index % count]
+
+    def _validate_and_repair(
+        self,
+        deck: Dict[str, Any],
+        section_data: Dict[str, Any],
+        max_slides: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        topic = _clean_text(deck.get("topic") or section_data.get("title") or "CUDA 专题", 80)
+        raw_slides = deck.get("slides") if isinstance(deck.get("slides"), list) else []
+        cap = max_slides or config.MAX_SLIDES_PER_SECTION
+
+        source_code = _norm_code("\n".join(section_data.get("code_snippets") or []))
+
+        slides: List[Dict[str, Any]] = []
+        for idx, raw in enumerate(raw_slides[:cap], start=1):
+            if not isinstance(raw, dict):
+                continue
+            slide_type = str(raw.get("slide_type") or "").strip()
+            if slide_type not in SLIDE_TYPES:
+                slide_type = "concept_breakdown"
+
+            title = _clean_text(raw.get("title"), 44)
+            if not title:
+                raise DeckOutputError(f"DeepSeek 输出不完整：第 {idx} 页缺少标题。")
+
+            points = _clean_points(raw.get("key_points"), limit=5, chars=46)
+            if len(points) < 2:
+                raise DeckOutputError(
+                    f"DeepSeek 输出不完整：第 {idx} 页 key_points 少于 2 条（{title}）。"
+                )
+
+            # Page-level narration is optional; the spoken script is assembled
+            # from step narrations below.
+            narration = _clean_text(raw.get("narration_script"), 700)
+
+            visual = raw.get("visual_spec") if isinstance(raw.get("visual_spec"), dict) else {}
+            code_badge = str(visual.get("code_badge") or "").strip()
+            if code_badge and source_code and _norm_code(code_badge) not in source_code:
+                # Never show hallucinated code.
+                print(f"[!] Dropped code_badge not found in source (slide {idx})")
+                code_badge = ""
+            if code_badge:
+                code_badge = "\n".join(line for line in code_badge.splitlines() if line.strip())[:600]
+
+            slide = {
+                "slide_id": idx,
+                "title": title,
+                "slide_type": slide_type,
+                "key_points": points,
+                "narration_script": narration,
+                "visual_spec": {
+                    "layout": _clean_text(visual.get("layout") or "header_and_bullets", 40),
+                    "code_badge": code_badge,
+                },
+            }
+
+            raw_plan = visual.get("scene_plan") if isinstance(visual.get("scene_plan"), dict) else {}
+            if slide_type == "title_overview":
+                # Title pages are always an agenda/roadmap figure.
+                raw_plan = {**raw_plan, "kind": "boxes"}
+            plan = normalize_plan(raw_plan, slide, topic=topic, duration=8.0)
+
+            expected_kind = choose_kind(slide.get("title", ""), " ".join(points))
+            if (
+                slide_type not in ("title_overview", "summary_best_practice")
+                and expected_kind in ("warp", "banks", "coalesce", "matrix")
+                and plan["kind"] != expected_kind
+            ):
+                # The model may default to a generic figure; upgrade it to the
+                # concept-specific visual when the slide is clearly about one.
+                plan = normalize_plan({**plan, "kind": expected_kind}, slide, topic=topic, duration=8.0)
+
+            # A code walkthrough is only valid when the PDF actually has code.
+            raw_code_lines = (raw_plan.get("figure") or {}).get("lines") if isinstance(raw_plan, dict) else None
+            if plan["kind"] == "code" and not (section_data.get("code_snippets") or code_badge or raw_code_lines):
+                fallback_kind = "grid" if expected_kind in ("grid", "timeline", "compare") else "boxes"
+                print(f"[!] No real code in source; downgrading slide {idx} from code to {fallback_kind}")
+                plan = normalize_plan({**plan, "kind": fallback_kind, "figure": {}}, slide, topic=topic, duration=8.0)
+
+            step_texts: List[str] = []
+            for step in plan.get("steps") or []:
+                text = _clean_text(step.get("narration"), 300)
+                if len(text) < 20:
+                    raise DeckOutputError(
+                        f"DeepSeek 输出不完整：第 {idx} 页步骤「{step.get('heading', '')}」缺少 narration。"
+                        "每个 step 必须提供本步骤旁白，用于和代码高亮精确同步。"
+                    )
+                step["narration"] = text
+                step_texts.append(text)
+
+            if plan["kind"] == "code":
+                self._repair_code_focus(plan)
+            self._improve_focus(plan)
+
+            # The spoken script is exactly the concatenation of step narrations.
+            slide["narration_script"] = " ".join(step_texts)
+            slide["visual_spec"]["scene_plan"] = plan
+            slides.append(slide)
+
+        if len(slides) < 3:
+            raise DeckOutputError(f"deck for {section_data.get('sec_id')} produced too few slides ({len(slides)})")
+
+        self._check_repetition(slides)
+
+        deck = {
+            "sec_id": section_data["sec_id"],
+            "chunk_id": section_data["sec_id"],
+            "concept_id": section_data["sec_id"],
+            "topic": topic,
+            "page_range": f"P{section_data.get('start_page')}-P{section_data.get('end_page')}",
+            "page_count": section_data.get("page_count"),
+            "slides": slides,
         }
+        return deck
 
-        try:
-            masked = (self.api_key[:6] + "..." + self.api_key[-4:]) if len(self.api_key) > 10 else "***"
-            print(f"[*] [DeepSeek Deck] 📡 正在调用 DeepSeek 生成定制 PPT 讲稿 (Key: {masked}, 目标: {section_data.get('title')})...")
-            resp = requests.post(url, headers=headers, json=payload, timeout=60)
-            if resp.status_code == 200:
-                print(f"[+] [DeepSeek Deck] ✅ DeepSeek 讲稿生成成功 (HTTP 200)！")
-                data = resp.json()
-                content = data["choices"][0]["message"]["content"]
-                return json.loads(content)
-            elif resp.status_code == 401:
-                print(f"[!] [DeepSeek Deck] ❌ API 认证失败 (HTTP 401: Invalid Key)！自动启用高保真内置算法引擎生成。")
-            else:
-                print(f"[!] [DeepSeek Deck] ⚠️ API 返回状态码 {resp.status_code}，自动启用内置算法引擎。")
-        except Exception as e:
-            print(f"[Warning] DeepSeek Deck builder error: {e}")
-        return None
-
-
-if __name__ == "__main__":
-    from pipeline.l1_full_parser import FullBookPdfParser
-    parser = FullBookPdfParser()
-    curriculum = parser.extract_full_curriculum(min_level=1, max_level=1)
-    gen = DeepPedagogicalDeckGenerator()
-
-    # Test Section 2: Programming Model
-    sec_data = parser.extract_section_text_and_code(curriculum[1])
-    deck = gen.generate_deck_from_section(sec_data)
-    print(f"\n[Deck Ready] Topic: {deck['topic']}")
-    print(f"Total Slides: {len(deck['slides'])}")
-    for s in deck['slides']:
-        print(f"  - Slide {s['slide_id']} [{s['slide_type']}]: {s['title']} ({len(s['narration_script'])} chars narration)")

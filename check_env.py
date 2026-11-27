@@ -50,72 +50,48 @@ def check_python_version() -> Dict[str, Any]:
 
 
 def check_ffmpeg() -> Dict[str, Any]:
-    # Check in PATH (including auto-discovered path by config)
-    ffmpeg_in_path = shutil.which("ffmpeg")
-    if ffmpeg_in_path:
-        ok, out = run_silent(["ffmpeg", "-version"])
-        ver = out.split("\n")[0] if out else "已安装"
+    binary = config.ffmpeg_binary()
+    if binary.exists() or shutil.which(str(binary)):
+        ok, out = run_silent([str(binary), "-version"])
+        version = out.split("\n")[0] if ok and out else "已找到"
         return {
             "name": "FFmpeg 视频编解码器",
-            "status": "PASS",
-            "detail": f"就绪 -> {ffmpeg_in_path} ({ver[:40]})",
-            "advice": ""
+            "status": "PASS" if ok else "WARN",
+            "detail": f"{binary} ({version[:50]})",
+            "advice": "" if ok else "文件存在但无法执行，请检查安装或改用 pip install imageio-ffmpeg。",
         }
-
-    # Check common Windows locations
-    common_locations = [
-        config.BASE_DIR / ".venv" / "Scripts" / "ffmpeg.exe",
-        Path(r"C:\ffmpeg\bin\ffmpeg.exe"),
-        Path(r"C:\Program Files\ffmpeg\bin\ffmpeg.exe"),
-        config.BASE_DIR / "ffmpeg.exe",
-        config.BASE_DIR / "bin" / "ffmpeg.exe",
-    ]
-    for loc in common_locations:
-        if loc.exists():
-            return {
-                "name": "FFmpeg 视频编解码器",
-                "status": "PASS",
-                "detail": f"发现于 {loc} (已自动挂载到环境)",
-                "advice": ""
-            }
 
     return {
         "name": "FFmpeg 视频编解码器",
         "status": "FAIL",
-        "detail": "未在系统 PATH 或虚拟环境中找到 ffmpeg.exe",
-        "advice": "Windows 安装命令：winget install Gyan.FFmpeg 或 pip install imageio-ffmpeg"
+        "detail": "未找到 ffmpeg（PATH / .venv / imageio-ffmpeg 均不可用）",
+        "advice": "pip install imageio-ffmpeg 或 winget install Gyan.FFmpeg",
     }
+
 
 
 
 def check_manim() -> Dict[str, Any]:
     try:
-        import manim
-        return {
-            "name": "Manim 物理动画引擎",
-            "status": "PASS",
-            "detail": f"Manim Community v{manim.__version__} (via {sys.executable})",
-            "advice": ""
-        }
-    except Exception:
-        pass
+        from pipeline.manim_renderer import find_manim_python
 
-    from pipeline.l4_manim_generator import find_python_interpreter
-    py_bin = find_python_interpreter()
+        found = find_manim_python()
+    except Exception as exc:
+        return {"name": "Manim 动画引擎", "status": "FAIL", "detail": f"探测失败: {exc}", "advice": "pip install manim"}
 
-    ok, out = run_silent([str(py_bin), "-c", "import manim; print(manim.__version__)"], timeout=15)
-    if ok and out:
+    if not found:
         return {
-            "name": "Manim 物理动画引擎",
-            "status": "PASS",
-            "detail": f"Manim Community v{out.strip()} (via {py_bin})",
-            "advice": ""
+            "name": "Manim 动画引擎",
+            "status": "FAIL",
+            "detail": "找不到可 import manim 的 Python 解释器",
+            "advice": "pip install manim，并确保主程序与 Manim 使用同一解释器。",
         }
+    python_bin, version = found
     return {
-        "name": "Manim 物理动画引擎",
-        "status": "WARN",
-        "detail": f"解释器 {py_bin} 未能成功 import manim",
-        "advice": "运行命令安装：pip install manim"
+        "name": "Manim 动画引擎",
+        "status": "PASS",
+        "detail": f"Manim Community v{version} via {python_bin}",
+        "advice": "",
     }
 
 
@@ -138,48 +114,35 @@ def check_latex() -> Dict[str, Any]:
 
 
 def check_deepseek_api() -> Dict[str, Any]:
-    api_key = config.DEEPSEEK_API_KEY or os.environ.get("DEEPSEEK_API_KEY", "")
-    if not api_key:
-        return {
-            "name": "DeepSeek API 大模型鉴权",
-            "status": "WARN",
-            "detail": "未检测到 DEEPSEEK_API_KEY（系统已内置零失败确定性算法引擎作为兜底）",
-            "advice": "在 config.py 中填入或在终端执行 set DEEPSEEK_API_KEY=your_key 以启用大模型高阶提炼。"
-        }
-
-    # Test network ping
-    import urllib.request
-    import json
     try:
-        url = f"{config.DEEPSEEK_BASE_URL.rstrip('/')}/models"
-        req = urllib.request.Request(
-            url,
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "User-Agent": "CudaStudyDiagnostics/1.0"
-            }
-        )
-        with urllib.request.urlopen(req, timeout=5) as response:
-            if response.status == 200:
-                return {
-                    "name": "DeepSeek API 大模型鉴权",
-                    "status": "PASS",
-                    "detail": f"连接成功 (Endpoint: {config.DEEPSEEK_BASE_URL}, Key: {api_key[:6]}***)",
-                    "advice": ""
-                }
-    except Exception as e:
+        from pipeline.deepseek_client import DeepSeekClient, diagnose
+
+        result = diagnose(DeepSeekClient())
         return {
-            "name": "DeepSeek API 大模型鉴权",
+            "name": "DeepSeek API 大模型",
+            "status": result["status"],
+            "detail": result["detail"],
+            "advice": result.get("advice", ""),
+        }
+    except Exception as exc:
+        return {
+            "name": "DeepSeek API 大模型",
             "status": "WARN",
-            "detail": f"已配置 Key 但端点连接异常: {str(e)[:60]}",
-            "advice": "请检查网络或 API Key 余额。离线模式将自动启用算法合成保底。"
+            "detail": f"探测失败: {exc}",
+            "advice": "检查 pipeline/deepseek_client.py 与网络设置。",
         }
 
+
+def check_video_geometry() -> Dict[str, Any]:
     return {
-        "name": "DeepSeek API 大模型鉴权",
+        "name": "视频输出规格",
         "status": "PASS",
-        "detail": f"已配置 Key: {api_key[:6]}***",
-        "advice": ""
+        "detail": (
+            f"{config.VIDEO_WIDTH}x{config.VIDEO_HEIGHT}@{config.VIDEO_FPS}fps "
+            f"（内容 {config.CONTENT_WIDTH}x{config.CONTENT_HEIGHT} + "
+            f"{config.SUBTITLE_BAND_HEIGHT}px 字幕条带）"
+        ),
+        "advice": "",
     }
 
 
@@ -228,6 +191,7 @@ def run_all_checks() -> List[Dict[str, Any]]:
         check_deepseek_api(),
         check_latex(),
         check_pdf_source(),
+        check_video_geometry(),
     ]
 
 

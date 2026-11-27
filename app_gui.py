@@ -5,10 +5,12 @@ Modern CustomTkinter Desktop Interface for 5-Layer Cognitive Animation Pipeline.
 
 import os
 import sys
+import io
 import time
 import queue
 import threading
 import subprocess
+import traceback
 from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox
@@ -19,6 +21,7 @@ BASE_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(BASE_DIR))
 
 import config
+import check_env
 from pipeline.l1_chunker import CudaChunker, CORE_COGNITIVE_UNITS
 from pipeline.l1_full_parser import FullBookPdfParser
 from pipeline.l2_deep_deck import DeepPedagogicalDeckGenerator
@@ -47,15 +50,24 @@ COLOR_TEXT_MUTED = "#8B949E"
 
 class LogEmitter:
     """Thread-safe log interceptor that sends messages to the GUI queue."""
+    encoding = "utf-8"
+    errors = "replace"
+
     def __init__(self, log_queue: queue.Queue):
         self.log_queue = log_queue
 
     def write(self, msg: str):
-        if msg.strip():
-            self.log_queue.put(("log", msg.strip()))
+        if msg and msg.strip():
+            self.log_queue.put(("log", msg.rstrip()))
 
     def flush(self):
         pass
+
+    def isatty(self) -> bool:
+        return False
+
+    def fileno(self):
+        raise io.UnsupportedOperation("LogEmitter has no file descriptor")
 
 
 class CudaStudioApp(ctk.CTk):
@@ -76,6 +88,8 @@ class CudaStudioApp(ctk.CTk):
         self.last_produced_srt = None
         self.last_produced_scene = None
         self.last_produced_ppt = None
+        self.remember_key_var = tk.BooleanVar(value=True)
+        self._last_saved_key = ""
 
         # Curriculum Sections (Dynamically loaded from PDF)
         self.curriculum_sections = []
@@ -161,17 +175,47 @@ class CudaStudioApp(ctk.CTk):
         sec2_lbl = ctk.CTkLabel(left_panel, text="🧠 DeepSeek AI 认知提炼设置", font=ctk.CTkFont(family="Microsoft YaHei", size=15, weight="bold"), text_color="#FFFFFF")
         sec2_lbl.pack(anchor="w", padx=15, pady=(10, 8))
 
-        ctk.CTkLabel(left_panel, text="DeepSeek API Key (可选，留空使用内置金标分镜):", font=ctk.CTkFont(size=12), text_color=COLOR_TEXT_MUTED).pack(anchor="w", padx=15)
+        ctk.CTkLabel(left_panel, text="DeepSeek API Key (必需，填一次可保存):", font=ctk.CTkFont(size=12), text_color=COLOR_TEXT_MUTED).pack(anchor="w", padx=15)
         key_row = ctk.CTkFrame(left_panel, fg_color="transparent")
-        key_row.pack(fill="x", padx=15, pady=(2, 8))
+        key_row.pack(fill="x", padx=15, pady=(2, 2))
 
         self.api_key_entry = ctk.CTkEntry(key_row, height=32, show="•", placeholder_text="sk-...", font=ctk.CTkFont(size=12))
-        if config.DEEPSEEK_API_KEY:
-            self.api_key_entry.insert(0, config.DEEPSEEK_API_KEY)
+        existing_key = config.api_key()
+        if existing_key:
+            self.api_key_entry.insert(0, existing_key)
         self.api_key_entry.pack(side="left", fill="x", expand=True, padx=(0, 8))
+        self.api_key_entry.bind("<FocusOut>", self._on_key_focus_out)
+        self.api_key_entry.bind("<Return>", self._on_key_focus_out)
 
         btn_test_key = ctk.CTkButton(key_row, text="测试连接", width=70, height=32, command=self._test_api_key)
         btn_test_key.pack(side="right")
+
+        self.remember_key_check = ctk.CTkCheckBox(
+            left_panel,
+            text="记住 Key（保存到本机 .env，下次自动填入；已被 git 忽略）",
+            variable=self.remember_key_var,
+            font=ctk.CTkFont(family="Microsoft YaHei", size=11),
+            checkbox_width=18,
+            checkbox_height=18,
+            border_width=2,
+            text_color=COLOR_TEXT_MUTED,
+            fg_color=COLOR_ACCENT,
+            hover_color=COLOR_ACCENT_HOVER,
+        )
+        self.remember_key_check.pack(anchor="w", padx=18, pady=(0, 4))
+
+        btn_clear_key = ctk.CTkButton(
+            left_panel,
+            text="清除已保存 Key",
+            width=120,
+            height=26,
+            font=ctk.CTkFont(family="Microsoft YaHei", size=11),
+            fg_color="#3A1F2A",
+            hover_color="#5A2A3A",
+            text_color="#FF9AA8",
+            command=self._clear_saved_key,
+        )
+        btn_clear_key.pack(anchor="w", padx=18, pady=(0, 10))
 
         # 3. Audio & Voiceover Settings
         sec3_lbl = ctk.CTkLabel(left_panel, text="🎙️ 语音旁白与音色设定", font=ctk.CTkFont(family="Microsoft YaHei", size=15, weight="bold"), text_color="#FFFFFF")
@@ -192,12 +236,12 @@ class CudaStudioApp(ctk.CTk):
 
         self.quality_seg = ctk.CTkSegmentedButton(
             left_panel,
-            values=["480P 预览 (-ql)", "720P 高清 (-qm)", "1080P 交付 (-qh)"],
+            values=["720P + 88px 字幕条带 (固定)"],
             selected_color=COLOR_ACCENT,
             selected_hover_color=COLOR_ACCENT_HOVER,
             height=34
         )
-        self.quality_seg.set("480P 预览 (-ql)")
+        self.quality_seg.set("720P + 88px 字幕条带 (固定)")
         self.quality_seg.pack(fill="x", padx=15, pady=(2, 10))
 
         # Checkpoint Resume Toggle
@@ -333,23 +377,89 @@ class CudaStudioApp(ctk.CTk):
         self.btn_srt.pack(side="left", padx=(0, 10), pady=10)
 
     def _initial_check(self):
-        """Checks for existing generated video to enable buttons if present."""
-        sample_video = config.OUTPUT_DIR / "videos" / "01_global_thread_indexing_final.mp4"
-        sample_srt = config.OUTPUT_DIR / "videos" / "01_global_thread_indexing_subtitles.srt"
-        if sample_video.exists():
-            self.last_produced_video = sample_video
-            self.last_produced_srt = sample_srt
-            self.btn_play.configure(state="normal")
+        """Enable playback buttons when a freshly produced final video exists."""
+        videos = sorted(
+            (config.OUTPUT_DIR / "videos").glob("*_final.mp4"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+        if not videos:
+            return
+        latest = videos[0]
+        srt = latest.with_name(latest.name.replace("_final.mp4", "_subtitles.srt"))
+        self.last_produced_video = latest
+        self.last_produced_srt = srt if srt.exists() else None
+        self.btn_play.configure(state="normal")
+        if self.last_produced_srt:
             self.btn_srt.configure(state="normal")
-            self._log("[系统提示] 检测到已存在历史成片，可随时点击'打开已生成视频'播放。\n")
+        self._log(f"[系统提示] 检测到历史成片：{latest.name}，可直接打开播放。")
+
+    def _clear_saved_key(self):
+        if not messagebox.askyesno(
+            "清除已保存的 Key",
+            "将从 .env 删除已保存的 DeepSeek Key，并清空输入框。\n其他设置会保留，确定继续？",
+            parent=self,
+        ):
+            return
+        path = config.BASE_DIR / ".env"
+        try:
+            path = config.clear_api_key()
+        except Exception as exc:
+            messagebox.showerror("清除失败", f"无法清除 {path}：{exc}", parent=self)
+            return
+        self.api_key_entry.delete(0, "end")
+        self._last_saved_key = ""
+        self._log(f"[*] 已清除保存的 Key（{path}）。请填入新 Key 后点“测试连接”。")
+
+    def _on_key_focus_out(self, event=None):
+        self._save_api_key(silent=False)
+
+    def _save_api_key(self, silent: bool = False) -> bool:
+        if not self.remember_key_var.get():
+            return False
+        key = self.api_key_entry.get().strip()
+        if not key:
+            return False
+        if key == self._last_saved_key:
+            return True
+        try:
+            path = config.save_api_key(key)
+        except Exception as exc:
+            if not silent:
+                self._log(f"[!] Key 保存失败（仍可本次使用）: {exc}")
+            return False
+        self._last_saved_key = key
+        if not silent:
+            self._log(f"[*] Key 已保存到 {path}，下次启动会自动填入。")
+        return True
 
     def _test_api_key(self):
         key = self.api_key_entry.get().strip()
-        self._log(f"\n[*] 正在连通 DeepSeek 官方云端验证 API Key 有效性...")
+        if not key:
+            messagebox.showwarning("提示", "请先填写 DeepSeek API Key。")
+            return
+        config.set_api_key(key)
+        remember = bool(self.remember_key_var.get())
+        self._log("\n[*] 正在验证 DeepSeek API Key（真实请求 /chat/completions）...")
+
         def _bg_test():
-            from pipeline.deepseek_director import DeepSeekDirector
-            ok, msg = DeepSeekDirector.test_api_key(key)
-            self.log_queue.put(("log", f"\n{msg}\n"))
+            from pipeline.deepseek_client import DeepSeekClient, diagnose
+
+            result = diagnose(DeepSeekClient(api_key=key))
+            self.log_queue.put(("log", f"[{result['status']}] {result['detail']}"))
+            if result.get("advice"):
+                self.log_queue.put(("log", f"         └─ {result['advice']}"))
+            if "401" in f"{result.get('detail', '')} {result.get('advice', '')}":
+                self.log_queue.put(
+                    ("log", "[*] 服务端拒绝了该 Key；可点“清除已保存 Key”后填入新 Key，避免下次继续自动填入失效 Key。")
+                )
+            if remember and result.get("status") == "PASS":
+                try:
+                    path = config.save_api_key(key)
+                    self.log_queue.put(("log", f"[*] Key 已验证并保存到 {path}，下次启动自动填入。"))
+                except Exception as exc:
+                    self.log_queue.put(("log", f"[!] Key 验证通过，但保存失败: {exc}"))
+
         threading.Thread(target=_bg_test, daemon=True).start()
 
     def _browse_pdf(self):
@@ -357,14 +467,18 @@ class CudaStudioApp(ctk.CTk):
             title="选择技术手册 PDF 文件",
             filetypes=[("PDF Documents", "*.pdf"), ("All Files", "*.*")]
         )
-        if filename:
-            self.pdf_entry.delete(0, "end")
-            self.pdf_entry.insert(0, filename)
-            self._load_curriculum_from_pdf(Path(filename))
-            self.chunk_combo.configure(values=list(self.chunk_options.values()))
-            first_val = list(self.chunk_options.values())[0]
-            self.chunk_combo.set(first_val)
-            self._log(f"[*] 成功重载 PDF 目录树: 共发现 {len(self.curriculum_sections)} 个章节小节。\n")
+        if not filename:
+            return
+        self.pdf_entry.delete(0, "end")
+        self.pdf_entry.insert(0, filename)
+        self._load_curriculum_from_pdf(Path(filename))
+        values = list(self.chunk_options.values()) or ["暂无可用章节"]
+        self.chunk_combo.configure(values=values)
+        self.chunk_combo.set(values[0])
+        if self.curriculum_sections:
+            self._log(f"[*] 已重载 PDF 目录：{len(self.curriculum_sections)} 个章节。")
+        else:
+            self._log("[!] 该 PDF 未解析到目录大纲，请检查文件。")
 
     def _load_curriculum_from_pdf(self, pdf_path: Path):
         """Dynamically parses all chapters & sections from the given PDF outline and DeepSeek Director."""
@@ -402,16 +516,26 @@ class CudaStudioApp(ctk.CTk):
         self.log_textbox.insert("end", text + "\n")
         self.log_textbox.see("end")
 
-    def _update_stage(self, stage_idx: int, text: str):
-        self.progress_bar.set((stage_idx + 1) / 5.0)
+    def _update_stage(self, stage, text: str):
+        if isinstance(stage, float):
+            ratio = max(0.0, min(1.0, stage))
+            stage_idx = min(4, int(ratio * 5))
+        else:
+            stage_idx = int(stage)
+            ratio = (stage_idx + 1) / 5.0
+        self.progress_bar.set(ratio)
         self.detail_status.configure(text=text)
         for i, lbl in enumerate(self.stage_labels):
             if i < stage_idx:
-                lbl.configure(text_color="#10B981")  # Completed green
+                lbl.configure(text_color="#10B981")
             elif i == stage_idx:
-                lbl.configure(text_color=COLOR_ACCENT) # Current highlight
+                lbl.configure(text_color=COLOR_ACCENT)
             else:
                 lbl.configure(text_color=COLOR_TEXT_MUTED)
+
+    def _on_progress(self, stage: str, message: str, pct: float):
+        """Called from the pipeline thread - only touches the queue."""
+        self.log_queue.put(("stage", (float(pct), message)))
 
     def _poll_log_queue(self):
         try:
@@ -429,49 +553,82 @@ class CudaStudioApp(ctk.CTk):
         self.after(80, self._poll_log_queue)
 
     def _run_env_check(self):
+        key = self.api_key_entry.get().strip()
+        config.set_api_key(key)
         self.log_textbox.delete("1.0", "end")
-        self._log("===========================================================================")
-        self._log("🚀 正在运行系统与依赖自检 (FFmpeg / Manim / Edge-TTS / DeepSeek)...")
-        self._log("===========================================================================")
-        checks = check_env.run_all_checks()
-        all_pass = True
-        status_icons = {
-            "PASS": "✅ [通过]",
-            "WARN": "⚠️ [注意]",
-            "FAIL": "❌ [缺失]",
-            "INFO": "💡 [提示]"
-        }
-        for c in checks:
-            icon = status_icons.get(c["status"], "[ ]")
-            self._log(f"{icon:<8} {c['name']:<22} : {c['detail']}")
-            if c["advice"]:
-                self._log(f"         └─ 建议: {c['advice']}")
-            if c["status"] == "FAIL":
-                all_pass = False
-        self._log("===========================================================================")
-        if all_pass:
-            self._log("🎉 核心依赖检测完毕，全部就绪！可以直接开始制作课程。")
-        else:
-            self._log("⚠️ 存在缺失依赖，请按照上述提示配置。")
+        self._log("=" * 75)
+        self._log("🚀 系统与依赖自检（FFmpeg / Manim / Edge-TTS / DeepSeek / PDF）")
+        self._log("=" * 75)
+
+        def _worker():
+            try:
+                from pipeline.deepseek_client import DeepSeekClient, diagnose
+
+                checks = check_env.run_all_checks()
+                # Replace the generic DeepSeek probe with one that uses the GUI key.
+                checks = [c for c in checks if "DeepSeek" not in c.get("name", "")]
+                probe = diagnose(DeepSeekClient(api_key=key))
+                checks.append(
+                    {
+                        "name": "DeepSeek API（当前输入框 Key）",
+                        "status": probe["status"],
+                        "detail": probe["detail"],
+                        "advice": probe.get("advice", ""),
+                    }
+                )
+
+                icons = {"PASS": "✅ [通过]", "WARN": "⚠️ [注意]", "FAIL": "❌ [缺失]", "INFO": "💡 [提示]"}
+                failed = False
+                for item in checks:
+                    icon = icons.get(item["status"], "[ ]")
+                    self.log_queue.put(("log", f"{icon} {item['name']}: {item['detail']}"))
+                    if item.get("advice"):
+                        self.log_queue.put(("log", f"         └─ 建议: {item['advice']}"))
+                    failed = failed or item["status"] == "FAIL"
+                self.log_queue.put(("log", "=" * 75))
+                self.log_queue.put(
+                    ("log", "⚠️ 存在缺失依赖，请按提示配置。" if failed else "🎉 核心依赖就绪，可以开始生成。")
+                )
+            except Exception:
+                self.log_queue.put(("log", "[!] 体检异常:\n" + traceback.format_exc()))
+
+        threading.Thread(target=_worker, daemon=True).start()
 
     def _start_pipeline(self):
         if self.is_running:
             return
 
-        # Read config from UI
         pdf_path = Path(self.pdf_entry.get().strip())
+        if not pdf_path.exists() or not pdf_path.is_file():
+            messagebox.showerror("PDF 不存在", f"找不到 PDF 文件：\n{pdf_path}\n\n请先选择有效的 PDF。")
+            return
+
         selected_chunk_text = self.chunk_combo.get()
-        chunk_key = next((k for k, v in self.chunk_options.items() if v == selected_chunk_text), "01_global_thread_indexing")
+        chunk_key = next((k for k, v in self.chunk_options.items() if v == selected_chunk_text), None)
+        if chunk_key is None:
+            messagebox.showwarning("未选择章节", "请在下拉框中选择要生成的章节。")
+            return
 
         api_key = self.api_key_entry.get().strip()
+        if not api_key:
+            messagebox.showerror(
+                "需要 DeepSeek API Key",
+                "本版本已移除「无 Key 兜底」模式，必须配置 DEEPSEEK_API_KEY 才能生成讲稿与动画。\n\n"
+                "请在输入框填入 Key，或在项目根目录 .env 中配置后重启。",
+            )
+            return
+        self._save_api_key(silent=False)
+        config.set_api_key(api_key)
         voice_str = self.voice_combo.get().split()[0]
         quality_str = self.quality_seg.get()
-        quality_map = {
-            "480P 预览 (-ql)": "-ql",
-            "720P 高清 (-qm)": "-qm",
-            "1080P 交付 (-qh)": "-qh"
-        }
-        quality_flag = quality_map.get(quality_str, "-ql")
+        quality_flag = "-qm"
+
+        # Reset per-run output state so a stale file can never look like success.
+        self.last_produced_video = None
+        self.last_produced_srt = None
+        self.last_produced_ppt = None
+        self._run_produced = []
+        self._run_error = ""
 
         self.is_running = True
         self.btn_run.configure(state="disabled", text="⏳ 正在全自动渲染中...")
@@ -480,117 +637,123 @@ class CudaStudioApp(ctk.CTk):
         self.btn_srt.configure(state="disabled")
         self.log_textbox.delete("1.0", "end")
 
-        self._log(f"[*] 启动生成任务: {selected_chunk_text}")
-        self._log(f"[*] 渲染画质: {quality_str} | 旁白音色: {voice_str}")
+        self._log(f"[*] 任务: {selected_chunk_text}")
+        self._log(
+            f"[*] DeepSeek: {'已启用 (' + api_key[:4] + '***)' if api_key else '未配置（生成会直接失败）'} "
+            f"| 音色: {voice_str} | 输出: 1280x720 + 88px 字幕条带"
+        )
 
-        # Start worker thread
         resume_mode = self.resume_var.get()
         self.worker_thread = threading.Thread(
             target=self._run_worker,
             args=(pdf_path, chunk_key, api_key, voice_str, quality_flag, resume_mode),
-            daemon=True
+            daemon=True,
         )
         self.worker_thread.start()
 
     def _run_worker(self, pdf_path: Path, chunk_key: str, api_key: str, voice: str, quality: str, resume: bool = True):
         emitter = LogEmitter(self.log_queue)
-        old_stdout = sys.stdout
+        old_stdout, old_stderr = sys.stdout, sys.stderr
         sys.stdout = emitter
+        sys.stderr = emitter
 
         try:
-            # Stage 0: L1 Dynamic Full Book Parser
-            self.log_queue.put(("stage", (0, "Layer 1: 正在深度解析 PDF 目录树与章节真实内容...")))
-            full_orch = FullBookOrchestrator(pdf_path=pdf_path, api_key=api_key, voice=voice)
+            config.set_api_key(api_key)
+            self.log_queue.put(("stage", (0.0, "Layer 1: 解析 PDF 目录树与章节内容...")))
+            full_orch = FullBookOrchestrator(
+                pdf_path=pdf_path,
+                api_key=api_key,
+                voice=voice,
+                progress=self._on_progress,
+            )
             curriculum = full_orch.parser.extract_full_curriculum(min_level=1, max_level=1)
+            if not curriculum:
+                raise RuntimeError("PDF 中没有解析到任何章节，请确认文件包含目录大纲。")
 
             target_sections = []
             if chunk_key.startswith("ep_"):
                 ep_num = chunk_key.replace("ep_", "")
                 from pipeline.deepseek_director import DeepSeekDirector
+                from pipeline.episode_router import describe_match, resolve_episode_section
+
                 director = DeepSeekDirector(api_key=api_key)
-                ep_spec = director.find_episode_by_id_or_title(ep_num)
-                if ep_spec:
-                    p_parts = ep_spec.get("guide_pages", "P20-P30").replace("P", "").split("-")
-                    p_start = int(p_parts[0]) if p_parts[0].isdigit() else 20
-                    p_end = int(p_parts[1]) if len(p_parts) > 1 and p_parts[1].isdigit() else p_start + 10
-                    target_sections = [{
-                        "sec_id": f"ep_{ep_num}_{ep_spec['ep_id']}",
-                        "title": f"第{ep_num}讲 · {ep_spec['title']}",
-                        "start_page": p_start,
-                        "end_page": p_end,
-                        "page_count": p_end - p_start + 1,
-                        "level": 1,
-                        "index": int(ep_num) if ep_num.isdigit() else 1,
-                        "episode_spec": ep_spec
-                    }]
+                ep_spec = director.find_episode_by_id_or_title(ep_num) or {
+                    "ep_id": ep_num,
+                    "title": self.chunk_options.get(chunk_key, f"第{ep_num}讲"),
+                }
+                resolved = resolve_episode_section(
+                    curriculum, ep_spec, int(ep_num) if str(ep_num).isdigit() else 1
+                )
+                if resolved:
+                    target_sections = [resolved]
+                    self.log_queue.put(("log", f"[*] 剧集章节路由: {describe_match(resolved)}"))
             elif chunk_key == "all":
-                target_sections = curriculum[:10]  # Batch top 10 core chapters
+                target_sections = curriculum[:10]
             else:
-                matched = [s for s in curriculum if s["sec_id"] == chunk_key]
-                if matched:
-                    target_sections = matched
+                target_sections = [s for s in curriculum if s["sec_id"] == chunk_key]
+                if not target_sections:
+                    target_sections = [curriculum[0]]
+
+            produced = []
+            for idx, section in enumerate(target_sections, start=1):
+                self.log_queue.put(
+                    ("stage", (0.05 + 0.85 * (idx - 1) / max(1, len(target_sections)),
+                               f"[{idx}/{len(target_sections)}] {section['title']}"))
+                )
+                result = full_orch.produce_section_video(section, quality=quality, resume=resume)
+                video = result.get("final_video")
+                if video and Path(video).exists():
+                    produced.append(Path(video))
+                    self._run_produced = list(produced)
+                    self.last_produced_video = Path(video)
+                    self.last_produced_srt = Path(str(video).replace("_final.mp4", "_subtitles.srt"))
+                    self.last_produced_ppt = result.get("deck_html")
                 else:
-                    # Fallback to curriculum[0] or default
-                    target_sections = [curriculum[1] if len(curriculum) > 1 else curriculum[0]]
+                    self.log_queue.put(
+                        ("log", f"[!] 章节失败: {section['title']} — {result.get('error', '未知错误')}")
+                    )
 
-            produced_videos = []
-            total_sections = len(target_sections)
+            if chunk_key == "all" and len(produced) > 1:
+                self.log_queue.put(("stage", (0.95, "拼接整书大课（不再二次烧字幕）...")))
+                master = full_orch.composer.concatenate_course_videos(
+                    produced,
+                    output_filename="00_cuda_master_course.mp4",
+                    burn_subtitles=False,
+                )
+                if master and master.exists():
+                    self.last_produced_video = master
+                    produced = [master]
 
-            for idx, sec in enumerate(target_sections, 1):
-                sec_id = sec["sec_id"]
-                sec_title = sec["title"]
-                page_info = f"P{sec.get('start_page')}-P{sec.get('end_page')}"
-
-                self.log_queue.put(("log", f"\n======================================================\n🎬 [{idx}/{total_sections}] 深度全真章节制作: {sec_title} ({page_info})\n======================================================"))
-
-                # Stage 1: Generate Deep PPT Deck
-                self.log_queue.put(("stage", (1, f"[{idx}/{total_sections}] Layer 2: 正在根据 PDF 原文提炼高信息密度 PPT 讲稿 ({sec_title})...")))
-
-                # Stage 2 & 3: Dual-Track Production
-                self.log_queue.put(("stage", (2, f"[{idx}/{total_sections}] Layer 3 & 4: 正在进行图文幻灯片与 Manim 物理微架构推演渲染 ({quality})...")))
-                sec_result = full_orch.produce_section_video(sec, quality=quality, resume=resume)
-
-                final_video = sec_result.get("final_video")
-                if final_video and final_video.exists():
-                    produced_videos.append(final_video)
-                    self.last_produced_video = final_video
-                    self.last_produced_srt = config.OUTPUT_DIR / "videos" / f"{sec_id}_subtitles.srt"
-                    self.last_produced_ppt = sec_result.get("deck_html")
-                    self.log_queue.put(("log", f"[+] 章节深度视频制作完成: {final_video.name}"))
-                else:
-                    self.log_queue.put(("log", f"[!] 章节渲染异常: {sec_id}"))
-
-            # If batching all, concatenate into a seamless full course
-            if chunk_key == "all" and len(produced_videos) > 1:
-                self.log_queue.put(("stage", (4, "Layer 5: 正在将全部真实章节视频无损拼接为整书大课 (Full Course Master)...")))
-                master_video = full_orch.composer.concatenate_course_videos(produced_videos, output_filename="00_cuda_full_book_master_course.mp4")
-                if master_video and master_video.exists():
-                    self.last_produced_video = master_video
-                    self.log_queue.put(("log", f"\n🏆 [整书系统大课制作完毕] 已成功保存至: {master_video}\n"))
-
+            if not produced:
+                raise RuntimeError(self._run_error or "所有章节均未产出视频，请查看上方日志。")
             self.log_queue.put(("finish", True))
 
-        except Exception as e:
-            self.log_queue.put(("log", f"[!] 执行过程异常: {str(e)}"))
+        except Exception:
+            details = traceback.format_exc()
+            self._run_error = details
+            self.log_queue.put(("log", "[!] 执行异常：\n" + details))
             self.log_queue.put(("finish", False))
         finally:
-            sys.stdout = old_stdout
+            sys.stdout, sys.stderr = old_stdout, old_stderr
 
     def _handle_finish(self, success: bool):
         self.is_running = False
         self.btn_run.configure(state="normal", text="🚀 一键全自动生成微视频")
 
-        if success and self.last_produced_video and self.last_produced_video.exists():
+        ok = bool(success and self.last_produced_video and self.last_produced_video.exists())
+        if ok:
             self.status_badge.configure(text="● 生成完成", text_color="#10B981")
             self.progress_bar.set(1.0)
-            self.detail_status.configure(text=f"成片渲染完毕! 位于: {self.last_produced_video.name}")
+            self.detail_status.configure(text=f"成片完成：{self.last_produced_video.name}")
             self.btn_play.configure(state="normal")
-            self.btn_srt.configure(state="normal")
-            self._log(f"\n🎉 [成功] 视频已保存至: {self.last_produced_video}\n")
-            messagebox.showinfo("生成完成", f"视频已成功生成！\n文件: {self.last_produced_video.name}")
+            if self.last_produced_srt and self.last_produced_srt.exists():
+                self.btn_srt.configure(state="normal")
+            self._log(f"\n🎉 [成功] 视频: {self.last_produced_video}\n")
+            messagebox.showinfo("生成完成", f"视频已生成：\n{self.last_produced_video}")
         else:
             self.status_badge.configure(text="● 异常中断", text_color="#EF4444")
-            self.detail_status.configure(text="生成中断，请查看日志排查。")
+            self.detail_status.configure(text="生成中断，请查看日志中的异常堆栈。")
+            messagebox.showerror("生成失败", "本次没有产出视频，请查看日志中的异常堆栈。")
 
     def _open_video(self):
         if self.last_produced_video and self.last_produced_video.exists():
@@ -623,6 +786,47 @@ class CudaStudioApp(ctk.CTk):
 
 
 def main():
+    # PyInstaller --windowed gives us no console: sys.stdout/stderr are None.
+    # Install harmless targets before anything can print.
+    if sys.stdout is None:
+        sys.stdout = io.StringIO()
+    if sys.stderr is None:
+        sys.stderr = io.StringIO()
+
+    if "--selftest" in sys.argv:
+        # Headless smoke test used by build_exe.py: writes a report and exits.
+        lines = []
+        try:
+            lines.append(f"frozen={getattr(sys, 'frozen', False)}")
+            lines.append(f"base_dir={config.BASE_DIR}")
+            lines.append(f"output_dir={config.OUTPUT_DIR}")
+            lines.append(f"api_key_configured={config.has_api_key()}")
+            lines.append(f"pdf_exists={config.DEFAULT_PDF_PATH.exists()}")
+            lines.append(f"assets_storyboard={(config.BASE_DIR / 'assets' / 'storyboard_scene.py').exists()}")
+            lines.append(f"ffmpeg={config.ffmpeg_binary()}")
+            from pipeline.manim_renderer import find_manim_python
+
+            found = find_manim_python()
+            lines.append(f"manim_python={found[0] if found else None}")
+            lines.append(f"manim_version={found[1] if found else None}")
+            import customtkinter  # noqa: F401
+            import av  # noqa: F401
+            import pypdf  # noqa: F401
+            import edge_tts  # noqa: F401
+
+            lines.append("gui_deps=ok")
+            if config.has_api_key():
+                lines.append("RESULT=PASS")
+            else:
+                lines.append("RESULT=FAIL: DEEPSEEK_API_KEY missing (fallback mode removed)")
+        except Exception as exc:
+            lines.append(f"RESULT=FAIL: {exc}")
+        try:
+            (config.OUTPUT_DIR / "_selftest.txt").write_text("\n".join(lines), encoding="utf-8")
+        except OSError:
+            pass
+        return
+
     app = CudaStudioApp()
     app.mainloop()
 

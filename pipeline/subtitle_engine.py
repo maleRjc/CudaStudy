@@ -1,19 +1,22 @@
 """
-Sentence-Level Dynamic Subtitle Generator (pipeline/subtitle_engine.py).
-Splits long continuous narration paragraphs into natural, short spoken sentences,
-calculates proportional millisecond start/end timestamps,
-and exports publication-grade SRT files and FFmpeg subtitle filter arguments.
+Single-line subtitle generation.
+
+Every cue is packed to fit one line inside the 1280px frame (see
+pipeline/cue_text.py). Cues that come from the shared step schedule are used
+directly; otherwise the narration is split and distributed proportionally.
 """
+
+from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Dict, Any, List, Tuple
+from typing import Any, Dict, List
+
+from pipeline.cue_text import MAX_CUE_EM, estimate_em, segment_cue, single_line
 
 
 def format_srt_time(seconds: float) -> str:
-    """Formats float seconds into SRT timestamp (HH:MM:SS,mmm)."""
-    if seconds < 0:
-        seconds = 0.0
+    seconds = max(0.0, float(seconds))
     hrs = int(seconds // 3600)
     mins = int((seconds % 3600) // 60)
     secs = int(seconds % 60)
@@ -24,56 +27,74 @@ def format_srt_time(seconds: float) -> str:
 
 
 class SubtitleEngine:
-    """Generates fine-grained, sentence-level synchronized subtitles from audio timeline."""
+    """Generates single-line, sentence-level synchronized subtitles."""
 
     @staticmethod
     def split_into_sentences(text: str) -> List[str]:
-        """Splits continuous narration into clear, concise spoken subtitle lines."""
         if not text:
             return []
-        # Split on standard Chinese/English sentence boundaries
-        raw_chunks = re.split(r'([。！？；\n]+)', text)
-        sentences = []
+        raw_chunks = re.split(r"([。！？；\n]+)", text)
+        sentences: List[str] = []
         for i in range(0, len(raw_chunks) - 1, 2):
-            s = (raw_chunks[i] + raw_chunks[i + 1]).strip()
-            if s:
-                # If a sentence is very long (>30 chars), split by comma or pause
-                if len(s) > 30 and ("，" in s or "," in s):
-                    sub_parts = re.split(r'([，,])', s)
-                    for j in range(0, len(sub_parts) - 1, 2):
-                        sub_s = (sub_parts[j] + sub_parts[j + 1]).strip()
-                        if sub_s:
-                            sentences.append(sub_s)
-                    if len(sub_parts) % 2 == 1 and sub_parts[-1].strip():
-                        sentences.append(sub_parts[-1].strip())
-                else:
-                    sentences.append(s)
-
+            sentence = (raw_chunks[i] + raw_chunks[i + 1]).strip()
+            if sentence:
+                sentences.append(sentence)
         if len(raw_chunks) % 2 == 1 and raw_chunks[-1].strip():
-            last = raw_chunks[-1].strip()
-            if last:
-                sentences.append(last)
+            sentences.append(raw_chunks[-1].strip())
+        return sentences or ([text.strip()] if text.strip() else [])
 
-        # Fallback if no punctuation matched
-        if not sentences and text.strip():
-            sentences = [text.strip()]
+    @staticmethod
+    def _append_pieces(
+        entries: List[str],
+        entry_idx: int,
+        start: float,
+        end: float,
+        text: str,
+    ) -> int:
+        """Split ``text`` into single-line cues and distribute the time span."""
+        pieces = segment_cue(single_line(text), MAX_CUE_EM)
+        if not pieces:
+            return entry_idx
+        if end <= start:
+            end = start + max(0.6, len(pieces) * 0.8)
 
-        return sentences
+        weights = [max(0.5, estimate_em(piece)) for piece in pieces]
+        total_weight = sum(weights) or 1.0
+        cursor = start
+        for piece, weight in zip(pieces, weights):
+            duration = (end - start) * weight / total_weight
+            cue_end = min(end, cursor + duration)
+            if cue_end <= cursor + 0.05:
+                cue_end = min(end, cursor + 0.3)
+            entries.append(
+                f"{entry_idx}\n"
+                f"{format_srt_time(cursor)} --> {format_srt_time(max(cue_end, cursor + 0.25))}\n"
+                f"{piece}\n"
+            )
+            entry_idx += 1
+            cursor = cue_end
+        return entry_idx
 
     @classmethod
     def generate_full_srt(cls, timeline: Dict[str, Any], output_srt_path: Path) -> Path:
-        """
-        Builds a complete, sentence-level synchronized SRT subtitle file
-        from the chapter's audio-visual timeline schedule.
-        """
         slides = timeline.get("slides") or timeline.get("beats", [])
-        srt_entries = []
+        entries: List[str] = []
         entry_idx = 1
 
-        for s in slides:
-            slide_start = float(s.get("start_time", 0.0))
-            audio_dur = float(s.get("audio_duration", 0.0))
-            narration = s.get("narration_script") or s.get("narration", "")
+        for slide in slides:
+            slide_start = float(slide.get("start_time", 0.0))
+            audio_dur = float(slide.get("audio_duration", 0.0))
+            narration = slide.get("narration_script") or slide.get("narration", "")
+
+            timeline_cues = slide.get("cues") or []
+            if timeline_cues:
+                for cue in timeline_cues:
+                    cue_start = max(slide_start, float(cue.get("start", 0.0)))
+                    cue_end = max(cue_start + 0.25, float(cue.get("end", cue_start + 0.6)))
+                    entry_idx = cls._append_pieces(
+                        entries, entry_idx, cue_start, cue_end, str(cue.get("text", ""))
+                    )
+                continue
 
             if not narration or audio_dur <= 0.1:
                 continue
@@ -81,47 +102,26 @@ class SubtitleEngine:
             sentences = cls.split_into_sentences(narration)
             if not sentences:
                 continue
+            weights = [max(0.5, estimate_em(sentence)) for sentence in sentences]
+            total_weight = sum(weights) or 1.0
 
-            # Calculate character counts (excluding punctuation) to apportion time
-            clean_lengths = [max(1, len(re.sub(r'[^\w\u4e00-\u9fff]', '', sent))) for sent in sentences]
-            total_chars = sum(clean_lengths)
-
-            curr_offset = 0.0
-            for idx, (sent, char_len) in enumerate(zip(sentences, clean_lengths)):
-                prop = char_len / total_chars
-                sent_dur = audio_dur * prop
-
-                sent_start = slide_start + curr_offset
-                sent_end = sent_start + sent_dur
-
-                # Add tiny gap at end of sentence
-                sent_end_clamped = min(slide_start + audio_dur, sent_end - 0.05)
-                if sent_end_clamped <= sent_start:
-                    sent_end_clamped = sent_end
-
-                srt_entries.append(
-                    f"{entry_idx}\n"
-                    f"{format_srt_time(sent_start)} --> {format_srt_time(sent_end_clamped)}\n"
-                    f"{sent}\n"
-                )
-                entry_idx += 1
-                curr_offset += sent_dur
+            cursor = slide_start
+            for sentence, weight in zip(sentences, weights):
+                duration = audio_dur * weight / total_weight
+                sentence_end = min(slide_start + audio_dur, cursor + duration)
+                entry_idx = cls._append_pieces(entries, entry_idx, cursor, sentence_end, sentence)
+                cursor = sentence_end
 
         output_srt_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(output_srt_path, "w", encoding="utf-8") as f:
-            f.write("\n".join(srt_entries))
-
-        print(f"[+] SubtitleEngine: Generated {len(srt_entries)} sentence-level subtitle entries -> {output_srt_path.name}")
+        output_srt_path.write_text("\n".join(entries), encoding="utf-8")
+        print(f"[+] SubtitleEngine: Generated {len(entries)} single-line cues -> {output_srt_path.name}")
         return output_srt_path
 
 
 if __name__ == "__main__":
-    sample_text = (
+    sample = (
         "欢迎来到 GPU 高性能计算与 CUDA 架构精讲。今天我们聚焦官方文档核心章节：Programming Model。"
         "在 GPU 异构计算的宏大世界里，这一章节具有承前启后的关键战略意义。"
-        "很多初学者在阅读这部分文档时，往往因为缺少物理空间直觉而感到晦涩难懂。"
     )
-    sents = SubtitleEngine.split_into_sentences(sample_text)
-    print("Split sentences:")
-    for i, s in enumerate(sents, 1):
-        print(f"  {i}. {s}")
+    for index, sentence in enumerate(SubtitleEngine.split_into_sentences(sample), 1):
+        print(index, sentence)

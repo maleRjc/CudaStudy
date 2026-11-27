@@ -1,70 +1,136 @@
 """
-Build Script for packaging CudaVideoStudio into a Windows GUI executable (.exe).
+Build CudaVideoStudio.exe with PyInstaller.
+
+Design notes:
+- Manim is NOT bundled: rendering happens in the project's .venv via
+  ``python -m manim`` (a frozen exe cannot serve as the Manim interpreter).
+  The exe therefore needs to live next to ``.venv/`` and ``assets/``.
+- Everything the GUI itself needs (customtkinter, av, pypdf, edge-tts, requests)
+  is bundled.
 """
 
-import os
+from __future__ import annotations
+
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
-PYINSTALLER_EXE = BASE_DIR / ".venv" / "Scripts" / "pyinstaller.exe"
+PYTHON = BASE_DIR / ".venv" / "Scripts" / "python.exe"
+DIST_DIR = BASE_DIR / "dist"
+BUILD_DIR = BASE_DIR / "build"
+APP_NAME = "CudaVideoStudio"
 
-def build():
+HIDDEN_IMPORTS = [
+    "check_env",
+    "customtkinter",
+    "darkdetect",
+    "PIL",
+    "PIL.Image",
+    "PIL.ImageFont",
+    "PIL.ImageDraw",
+    "av",
+    "pypdf",
+    "edge_tts",
+    "requests",
+    "imageio_ffmpeg",
+    "pipeline.storyboard",
+    "pipeline.deepseek_client",
+    "pipeline.manim_renderer",
+    "pipeline.l4b_slide_renderer",
+    "pipeline.l5_video_composer",
+    "pipeline.full_book_orchestrator",
+    "pipeline.deepseek_director",
+    "pipeline.l4_manim_generator",
+]
+
+EXCLUDES = [
+    # Rendering is delegated to the external .venv interpreter.
+    "manim",
+    "manimlib",
+    "manimpango",
+    "moderngl",
+    "moderngl_window",
+    "cairo",
+    "pycairo",
+    # Heavy scientific stack that the GUI never touches.
+    "numpy",
+    "scipy",
+    "matplotlib",
+    "sympy",
+    "pandas",
+    "sklearn",
+    "torch",
+    "tensorflow",
+    "IPython",
+    "jupyter",
+    "notebook",
+    "pytest",
+    "tkinter.test",
+    "test",
+]
+
+
+def build() -> bool:
+    if not PYTHON.exists():
+        print(f"[!] Python not found: {PYTHON}")
+        return False
+
     print("=" * 70)
-    print("🔨 Starting PyInstaller packaging for CudaVideoStudio...")
+    print("🔨 Building CudaVideoStudio.exe")
     print("=" * 70)
 
-    # Clean previous build artifacts
-    for d in [BASE_DIR / "build", BASE_DIR / "dist"]:
-        if d.exists():
-            shutil.rmtree(d, ignore_errors=True)
+    for directory in (BUILD_DIR, DIST_DIR):
+        if directory.exists():
+            shutil.rmtree(directory, ignore_errors=True)
 
     cmd = [
-        str(PYINSTALLER_EXE),
+        str(PYTHON), "-m", "PyInstaller",
         "--noconfirm",
+        "--clean",
         "--onefile",
         "--windowed",
-        "--name", "CudaVideoStudio",
+        "--name", APP_NAME,
+        "--distpath", str(DIST_DIR),
+        "--workpath", str(BUILD_DIR),
+        "--specpath", str(BUILD_DIR),
+        "--paths", str(BASE_DIR),
         "--add-data", f"{BASE_DIR / 'assets'};assets",
-        "--add-data", f"{BASE_DIR / 'pipeline'};pipeline",
-        "--add-data", f"{BASE_DIR / 'config.py'};.",
         "--collect-data", "customtkinter",
-        "--collect-submodules", "pipeline",
-        "--collect-submodules", "assets",
-        "--hidden-import", "customtkinter",
-        "--hidden-import", "darkdetect",
-        "--hidden-import", "PIL",
-        "--hidden-import", "PIL.Image",
-        "--hidden-import", "edge_tts",
-        "--hidden-import", "pypdf",
-        "--hidden-import", "av",
-        "--hidden-import", "manim",
-        str(BASE_DIR / "app_gui.py")
     ]
+    for module in HIDDEN_IMPORTS:
+        cmd += ["--hidden-import", module]
+    for module in EXCLUDES:
+        cmd += ["--exclude-module", module]
+    cmd.append(str(BASE_DIR / "app_gui.py"))
 
-    print(f"[*] Running command:\n{' '.join(cmd)}\n")
+    print(f"[*] Python: {PYTHON}")
+    print("[*] Bundling GUI only; Manim renders via .venv at runtime.\n")
+    started = time.time()
     proc = subprocess.run(cmd, cwd=str(BASE_DIR))
+    elapsed = time.time() - started
 
-    if proc.returncode == 0:
-        dist_exe = BASE_DIR / "dist" / "CudaVideoStudio.exe"
-        if dist_exe.exists():
-            # Also copy to root for immediate access
-            root_exe = BASE_DIR / "CudaVideoStudio.exe"
-            shutil.copy2(dist_exe, root_exe)
-            
-            size_mb = round(root_exe.stat().st_size / 1024 / 1024, 2)
-            print("=" * 70)
-            print(f"🎉 [BUILD SUCCESS] Packaged GUI Executable created!")
-            print(f"📍 Location 1: {dist_exe} ({size_mb} MB)")
-            print(f"📍 Location 2 (Root): {root_exe} ({size_mb} MB)")
-            print("=" * 70)
-            return True
+    dist_exe = DIST_DIR / f"{APP_NAME}.exe"
+    if proc.returncode != 0 or not dist_exe.exists():
+        print(f"\n[!] Build failed (exit={proc.returncode}, elapsed={elapsed:.0f}s)")
+        return False
 
-    print("[!] Build failed with exit code:", proc.returncode)
-    return False
+    root_exe = BASE_DIR / f"{APP_NAME}.exe"
+    try:
+        shutil.copy2(dist_exe, root_exe)
+    except PermissionError:
+        print(f"\n[!] 无法覆盖根目录 exe：{root_exe} 正在运行。请先关闭 GUI，再复制 dist 中的文件。")
+        return False
+    size_mb = round(root_exe.stat().st_size / 1024 / 1024, 1)
+    print("=" * 70)
+    print(f"🎉 Build success in {elapsed:.0f}s")
+    print(f"   dist: {dist_exe} ({size_mb} MB)")
+    print(f"   root: {root_exe}")
+    print("=" * 70)
+    return True
+
 
 if __name__ == "__main__":
-    success = build()
-    sys.exit(0 if success else 1)
+    sys.exit(0 if build() else 1)

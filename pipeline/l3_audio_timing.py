@@ -1,20 +1,39 @@
 """
-Layer 3: Audio-Clock Driven TTS Synthesis and Timeline Engine.
-Synthesizes voiceover per visual beat via Edge-TTS, extracts exact millisecond durations,
-and constructs the absolute audio-visual timeline manifest.
+Layer 3: audio-clock driven timeline.
+
+Synthesizes one narration clip per slide (Edge-TTS), measures the real audio
+duration, and builds the absolute timeline used by every downstream layer.
+
+Two durations are recorded per slide:
+- ``audio_duration``  : measured narration length
+- ``total_beat_duration`` : audio + deliberate pause (the on-screen slot)
+
+Audio files are keyed by a hash of the narration text, so editing a script
+never reuses stale audio.
 """
 
+from __future__ import annotations
+
 import asyncio
+import hashlib
 import json
 import subprocess
 from pathlib import Path
-from typing import Dict, Any, List
-import edge_tts
+from typing import Any, Dict, List
+
 import av
+import edge_tts
 
 import sys
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import config
+from pipeline.slide_timing import build_schedule, schedule_from_steps
+from pipeline.tts_text import normalize_for_speech
+
+
+def _text_hash(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:10]
 
 
 class AudioTimingEngine:
@@ -24,130 +43,246 @@ class AudioTimingEngine:
         self.volume = volume or config.TTS_VOLUME
         self.audio_dir = config.OUTPUT_DIR / "audio"
         self.timeline_dir = config.OUTPUT_DIR / "beats"
-        self.audio_dir.mkdir(parents=True, exist_ok=True)
-        self.timeline_dir.mkdir(parents=True, exist_ok=True)
+        for directory in (self.audio_dir, self.timeline_dir):
+            try:
+                directory.mkdir(parents=True, exist_ok=True)
+            except OSError:
+                pass
 
-    async def _synthesize_clip(self, text: str, output_path: Path):
-        """Asynchronously synthesizes an audio clip using edge-tts with resilient retry and fallback."""
+    # ------------------------------------------------------------------
+    async def _synthesize_clip(self, text: str, output_path: Path) -> bool:
         if output_path.exists() and output_path.stat().st_size > 1000:
-            return
+            return True
 
-        max_retries = 4
+        max_retries = 3
         for attempt in range(1, max_retries + 1):
             try:
-                communicate = edge_tts.Communicate(text=text, voice=self.voice, rate=self.rate, volume=self.volume)
+                communicate = edge_tts.Communicate(
+                    text=text,
+                    voice=self.voice,
+                    rate=self.rate,
+                    volume=self.volume,
+                )
                 await communicate.save(str(output_path))
                 if output_path.exists() and output_path.stat().st_size > 500:
-                    return
-            except Exception as e:
-                print(f"[Warning] Edge-TTS attempt {attempt}/{max_retries} failed ({e}). Retrying in {attempt * 2}s...")
-                await asyncio.sleep(2.0 * attempt)
+                    return True
+            except Exception as exc:  # network flake, service busy, ...
+                print(f"[Warning] Edge-TTS attempt {attempt}/{max_retries} failed ({exc}). Retrying...")
+                await asyncio.sleep(1.5 * attempt)
 
-        # Fallback: synthesize silent placeholder audio via FFmpeg to prevent overnight batch crash
-        print(f"[!] Edge-TTS network unreachable for '{output_path.name}'. Generating fallback audio via FFmpeg...")
-        est_sec = max(round(len(text) / 4.5, 2), 3.0)
+        print(f"[!] Edge-TTS unavailable for '{output_path.name}'. Writing silent placeholder.")
         try:
-            subprocess.run([
-                "ffmpeg", "-y", "-f", "lavfi", "-i", "anullsrc=r=24000:cl=mono",
-                "-t", str(est_sec), "-c:a", "libmp3lame", str(output_path)
-            ], capture_output=True, check=True)
-        except Exception as e:
-            print(f"[!] Fallback FFmpeg audio error: {e}")
+            import subprocess
+
+            est_seconds = max(round(len(text) / 4.5, 1), 3.0)
+            creationflags = 0
+            startupinfo = None
+            if sys.platform == "win32":
+                creationflags = subprocess.CREATE_NO_WINDOW
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                startupinfo.wShowWindow = subprocess.SW_HIDE
+            subprocess.run(
+                [
+                    str(config.ffmpeg_binary()),
+                    "-y", "-f", "lavfi", "-i", "anullsrc=r=24000:cl=mono",
+                    "-t", str(est_seconds), "-c:a", "libmp3lame", str(output_path),
+                ],
+                capture_output=True,
+                check=True,
+                creationflags=creationflags,
+                startupinfo=startupinfo,
+            )
+            return output_path.exists()
+        except Exception as exc:
+            print(f"[!] Silent placeholder failed: {exc}")
+            return False
 
     def get_audio_duration(self, audio_path: Path) -> float:
-        """Reads exact audio duration in seconds using PyAV."""
         try:
             with av.open(str(audio_path)) as container:
                 stream = container.streams.audio[0]
-                # Duration in seconds
                 duration = float(stream.duration * stream.time_base)
-                return round(duration, 3)
-        except Exception as e:
-            print(f"[Warning] PyAV failed to probe {audio_path}: {e}")
-            # Fallback estimation: 4 chars per second
-            return 2.5
+                if duration > 0.05:
+                    return round(duration, 3)
+        except Exception as exc:
+            print(f"[Warning] PyAV probe failed for {audio_path.name}: {exc}")
+        return 2.5
+
+    # ------------------------------------------------------------------
+    def _concat_audio(self, paths: List[Path], output_path: Path) -> bool:
+        """Concatenate per-step narration clips into one slide audio track."""
+        if not paths:
+            return False
+        if output_path.exists() and output_path.stat().st_size > 1000:
+            return True
+        cmd = [str(config.ffmpeg_binary()), "-y"]
+        for path in paths:
+            cmd += ["-i", str(path)]
+        inputs = "".join(f"[{index}:a]" for index in range(len(paths)))
+        cmd += [
+            "-filter_complex",
+            f"{inputs}concat=n={len(paths)}:v=0:a=1[aout]",
+            "-map", "[aout]",
+            "-c:a", "libmp3lame",
+            "-b:a", "192k",
+            str(output_path),
+        ]
+        creationflags = 0
+        startupinfo = None
+        if sys.platform == "win32":
+            creationflags = subprocess.CREATE_NO_WINDOW
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            startupinfo.wShowWindow = subprocess.SW_HIDE
+        try:
+            proc = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                creationflags=creationflags,
+                startupinfo=startupinfo,
+            )
+            if proc.returncode == 0 and output_path.exists() and output_path.stat().st_size > 1000:
+                return True
+            print(f"[!] Step audio concat failed: {(proc.stderr or '')[-300:]}")
+        except Exception as exc:
+            print(f"[!] Step audio concat error: {exc}")
+        return False
 
     async def process_manifest(self, beat_manifest: Dict[str, Any]) -> Dict[str, Any]:
-        """Synthesizes all narrations in manifest/deck and builds timeline schedule."""
-        chunk_id = beat_manifest.get("sec_id") or beat_manifest.get("concept_id") or beat_manifest.get("chunk_id", "unnamed_concept")
+        chunk_id = (
+            beat_manifest.get("sec_id")
+            or beat_manifest.get("concept_id")
+            or beat_manifest.get("chunk_id")
+            or "unnamed"
+        )
         slides = beat_manifest.get("slides")
-        beats = slides if slides is not None else beat_manifest.get("beats", [])
-        print(f"[*] Layer 3: Synthesizing TTS & building Audio-Clock timeline for {chunk_id} ({len(beats)} units)...")
+        if slides is None:
+            slides = beat_manifest.get("beats") or []
+        topic = beat_manifest.get("topic") or beat_manifest.get("title", "")
 
-        timeline_beats = []
-        current_time_cursor = 0.0
+        print(f"[*] Layer 3: TTS + audio clock for {chunk_id} ({len(slides)} slides)...")
 
-        for idx, b in enumerate(beats, 1):
-            b_id = b.get("slide_id") or b.get("beat_id", idx)
-            # Support both narration_script (from Deck) and narration (from Beat)
-            narration = b.get("narration_script") or b.get("narration", "")
-            pause_buf = float(b.get("pause_buffer", config.DEFAULT_PAUSE_BUFFER))
+        timeline_slides: List[Dict[str, Any]] = []
+        cursor = 0.0
 
-            audio_file = self.audio_dir / f"{chunk_id}_slide_{b_id}.mp3"
+        for idx, slide in enumerate(slides, start=1):
+            slide_id = int(slide.get("slide_id") or slide.get("beat_id") or idx)
+            narration = str(slide.get("narration_script") or slide.get("narration") or "").strip()
+            pause = float(slide.get("pause_buffer", config.DEFAULT_PAUSE_BUFFER))
 
-            # Synthesize narration if non-empty
-            if narration:
-                await self._synthesize_clip(narration, audio_file)
-                audio_duration = self.get_audio_duration(audio_file)
-            else:
-                audio_duration = 0.0
+            plan = (slide.get("visual_spec") or {}).get("scene_plan") or {}
+            plan = dict(plan) if isinstance(plan, dict) else {}
+            steps = plan.get("steps") or []
+            step_texts = [str(step.get("narration") or "").strip() for step in steps]
+            per_step_audio = len(step_texts) >= 2 and all(len(text) >= 20 for text in step_texts)
 
-            action_duration = max(audio_duration, config.MIN_ACTION_DURATION)
-            total_beat_duration = round(action_duration + pause_buf, 3)
+            audio_file = Path("")
+            audio_duration = 0.0
+            schedule = None
 
-            timeline_item = {
-                "beat_id": b_id,
-                "slide_id": b_id,
-                "title": b.get("title", ""),
-                "slide_type": b.get("slide_type", "concept"),
-                "key_points": b.get("key_points", []),
-                "layout_zone": b.get("layout_zone", "center"),
-                "visual_spec": b.get("visual_spec", {}),
-                "visual_action": b.get("visual_action", ""),
+            if per_step_audio:
+                speech_texts = [normalize_for_speech(text) for text in step_texts]
+                step_files: List[Path] = []
+                step_durations: List[float] = []
+                for step_index, step_text in enumerate(speech_texts):
+                    step_path = self.audio_dir / (
+                        f"{chunk_id}_s{slide_id:02d}_step{step_index:02d}_{_text_hash(step_text)}.mp3"
+                    )
+                    ok = await self._synthesize_clip(step_text, step_path)
+                    step_durations.append(
+                        self.get_audio_duration(step_path) if ok else max(2.0, len(step_text) / 4.5)
+                    )
+                    step_files.append(step_path)
+                combined = self.audio_dir / (
+                    f"{chunk_id}_s{slide_id:02d}_steps_{_text_hash('|'.join(speech_texts))}.mp3"
+                )
+                if self._concat_audio(step_files, combined):
+                    audio_file = combined
+                    audio_duration = round(sum(step_durations), 3)
+                    narration = " ".join(speech_texts)
+                    schedule = schedule_from_steps(speech_texts, step_durations)
+                else:
+                    per_step_audio = False
+
+            if not per_step_audio:
+                speech_narration = normalize_for_speech(narration)
+                digest = _text_hash(speech_narration) if speech_narration else "silent"
+                audio_file = self.audio_dir / f"{chunk_id}_s{slide_id:02d}_{digest}.mp3"
+                if speech_narration:
+                    ok = await self._synthesize_clip(speech_narration, audio_file)
+                    audio_duration = (
+                        self.get_audio_duration(audio_file)
+                        if ok
+                        else max(2.0, len(speech_narration) / 4.5)
+                    )
+                else:
+                    audio_duration = 0.0
+                    audio_file = Path("")
+                schedule = build_schedule(speech_narration, steps, audio_duration, pause)
+
+            # The visual slot must cover the narration plus the deliberate pause.
+            total = round(audio_duration + pause, 3)
+            # Leave a little headroom so the animation does not get trimmed.
+            plan["duration"] = round(max(3.0, total - 0.6), 3)
+            plan["windows"] = schedule["windows"] if schedule else []
+            absolute_cues = [
+                {
+                    "start": round(cursor + cue["start"], 3),
+                    "end": round(cursor + cue["end"], 3),
+                    "text": cue["text"],
+                }
+                for cue in (schedule["cues"] if schedule else [])
+            ]
+
+            item = {
+                "slide_id": slide_id,
+                "beat_id": slide_id,
+                "index": idx,
+                "title": slide.get("title", ""),
+                "slide_type": slide.get("slide_type", "concept_breakdown"),
+                "key_points": slide.get("key_points", []),
+                "layout": (slide.get("visual_spec") or {}).get("layout", ""),
+                "visual_spec": slide.get("visual_spec", {}),
+                "scene_plan": plan,
                 "narration": narration,
-                "audio_file": str(audio_file),
+                "audio_file": str(audio_file) if audio_file else "",
                 "audio_duration": audio_duration,
-                "action_duration": action_duration,
-                "pause_buffer": pause_buf,
-                "total_beat_duration": total_beat_duration,
-                "start_time": round(current_time_cursor, 3),
-                "end_time": round(current_time_cursor + total_beat_duration, 3)
+                "pause_buffer": pause,
+                "total_beat_duration": total,
+                "start_time": round(cursor, 3),
+                "end_time": round(cursor + total, 3),
+                "cues": absolute_cues,
             }
+            timeline_slides.append(item)
+            cursor += total
+            print(
+                f"    - Slide {slide_id}: audio {audio_duration:.1f}s + pause {pause:.1f}s "
+                f"= {total:.1f}s (start {item['start_time']:.1f}s)"
+            )
 
-            timeline_beats.append(timeline_item)
-            current_time_cursor += total_beat_duration
-            print(f"    - Slide {b_id}: Voice {audio_duration}s + Pause {pause_buf}s = Total {total_beat_duration}s (Starts @ {timeline_item['start_time']}s)")
-
-        full_timeline = {
+        timeline = {
             "sec_id": chunk_id,
             "chunk_id": chunk_id,
             "concept_id": chunk_id,
-            "title": beat_manifest.get("topic") or beat_manifest.get("title", ""),
-            "total_video_duration": round(current_time_cursor, 3),
-            "slides": timeline_beats,
-            "beats": timeline_beats
+            "title": topic,
+            "total_video_duration": round(cursor, 3),
+            "slides": timeline_slides,
+            "beats": timeline_slides,
         }
 
-
         timeline_path = self.timeline_dir / f"{chunk_id}_timeline.json"
-        with open(timeline_path, "w", encoding="utf-8") as f:
-            json.dump(full_timeline, f, ensure_ascii=False, indent=2)
+        try:
+            payload = {k: v for k, v in timeline.items() if k != "beats"}
+            timeline_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        except OSError as exc:
+            print(f"[!] Could not write timeline: {exc}")
 
-        print(f"[+] Layer 3 Success: Full video timeline ({full_timeline['total_video_duration']}s) saved to {timeline_path.name}")
-        return full_timeline
+        print(f"[+] Layer 3 done: {timeline['total_video_duration']}s -> {timeline_path.name}")
+        return timeline
 
     def run(self, beat_manifest: Dict[str, Any]) -> Dict[str, Any]:
-        """Synchronous wrapper for execution."""
         return asyncio.run(self.process_manifest(beat_manifest))
-
-
-if __name__ == "__main__":
-    from pipeline.l2_deepseek_beats import DeepSeekBeatGenerator
-    from pipeline.l1_chunker import CORE_COGNITIVE_UNITS
-
-    gen = DeepSeekBeatGenerator()
-    manifest = gen.generate_for_chunk(CORE_COGNITIVE_UNITS[0])
-
-    engine = AudioTimingEngine()
-    timeline = engine.run(manifest)
-    print("Timeline generated successfully!")

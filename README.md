@@ -4,6 +4,50 @@
 
 ---
 
+## ✅ v2 实现说明（以代码为准）
+
+当前实现已改为「**DeepSeek 主导讲稿与分镜 → 确定性 Manim 渲染器执行**」：
+
+1. **DeepSeek 真正接管 PPT 与动画设计**
+   - `pipeline/l2_deep_deck.py` 用 DeepSeek 生成每一节的 PPT 讲稿，并**为每一页单独产出 `scene_plan`**（图形类型、步骤、高亮元素、时长）。
+   - 模型不再直接写 Python 代码执行，而是输出受约束的 JSON 分镜；`assets/storyboard_scene.py` 负责把它渲染成 6 种图形（grid / bars / timeline / boxes / code / compare），因此**每一页动画都不一样**。
+   - 未配置 Key 时**直接报错并停止**，不会生成模板/兜底讲稿（v2.2 起移除了无 Key 兜底模式）。
+
+2. **字幕永不遮挡画面**
+   - 成片固定 `1280x720`：上方 `1280x632` 为内容区，底部 `88px` 为专用字幕条带。
+   - 所有片段先归一化（scale/pad/30fps/AAC），字幕只烧进底部条带；同时保留 `.srt` 文件。
+
+3. **Key 的生效路径已打通**
+   - `config.api_key()` 是唯一入口；GUI 输入框、`.env`、环境变量三种方式都生效。
+   - 代码生成、讲稿生成、体检全部使用同一个客户端 `pipeline/deepseek_client.py`（带重试、超时、JSON 容错，日志只打印 Key 指纹）。
+
+4. **关键修复**
+   - 修复 PDF 代码抽取（此前对真实文档恒返回 0 段代码）。
+   - 修复「成片结束但状态显示成功」、GUI 体检按钮 `NameError`、打包后 Manim 解释器自指等阻断问题。
+   - 分页缓存改为内容哈希（改稿/换画质不会误复用旧片段）。
+
+5. **打包（CudaVideoStudio.exe）**
+   - 构建：`.venv\Scripts\python.exe build_exe.py`（onefile / windowed，约 94MB）。
+   - GUI 依赖（customtkinter / av / pypdf / edge-tts / requests）已打进 exe；**Manim 不进包**，渲染时调用同目录 `.venv\Scripts\python.exe -m manim`。
+   - 因此 exe 必须与 `.venv/`、`assets/`、默认 PDF 放在同一目录（即项目根目录）；单独把 exe 复制到桌面无法渲染。
+   - 无控制台排查：运行 `CudaVideoStudio.exe --selftest`，结果写入 `output/_selftest.txt`。
+
+6. **v2.1 视觉引擎（概念专用动画）**
+   - 不再只有通用方框：新增 `warp`（32 线程锁步/分支分化）、`banks`（32 Bank 冲突/Padding）、`coalesce`（合并访存/事务分裂）、`matrix`（Tiled GEMM）等概念专用分镜。
+   - 高对比度主题：白色正文 + 高饱和强调色 + 抬升的舞台面板，不再是"95% 像素接近纯黑"。
+   - 每个分镜包含：大标题、左侧要点、关键数字（32 / 128B / TILE）、底部阶段进度、扫描光带与呼吸高亮，避免长时间定格。
+   - **字幕与高亮共用同一套分步时间窗**：旁白按步骤切分后，步骤起始时刻 = 对应字幕 cue 的起始时刻；`code` 分镜直接使用 LLM 给出的 `focus` 行号高亮，不再用“第几步”猜行号。
+   - **每步独立旁白与配音**：DeepSeek 为每个 step 单独产出 `narration`（60~140 字），L3 逐步合成语音并拼接；该步音频时长就是动画窗口，窗口内字幕只来自该步旁白。`code` 步骤的旁白只讲 `focus` 指定的代码行，并在校验阶段按旁白中的标识符自动修正 focus。
+   - **反重复与内容质量**：语料输入扩展到 18 段原文 + 4 段真实代码；输出后自动剔除跨页完全重复的句子，近重复讲解或跨页复用同一段代码则带具体原因重写；提示词要求每页按“是什么 → 为什么 → 原文例子 → 边界/性能”展开。
+   - **长输出防截断**：默认生成 4 页 × 3 步的紧凑分镜，避免 8K token 截断；若 JSON 仍被截断，会先尝试修复并只保留完整页，再用更紧凑的提示重试。
+   - **总结页也动画**：summary 页只要带有效 `scene_plan` 就走 Manim，不再强制降级成静态卡片。
+   - **TTS 符号规范化**：`kernel<<<grid, block>>>` 读作“启动配置为 …”，`__syncthreads()` 读作“同步屏障”，`blockIdx.x` 读作“块索引变量的 x 分量”，不再把 `<<<` 念成一串“小于”。
+   - **剧集路由**：按概念而非泛词（GPU/CUDA）匹配章节，`ep_09 线程索引` 已从误匹配的 Multi-GPU 章节改到 Programming Model。
+   - **字幕强制单行**：先按标点/空格/英文整词切成语义单元，再组合成不超过约 28em 的单行字幕；烧录字号 20、`WrapStyle=2`，不会折成两行，也不会切断英文标识符或中文词组。
+   - DeepSeek 的提示词已升级：要求为每页选择概念专用 `kind`、4~5 个中文步骤、每步解释因果；模型选错通用图形时会被自动升级为匹配的专用图形。
+   - 剧集（`ep_XX`）不再使用硬编码页码，而是按标题语义匹配真实 PDF 章节（如 `ep_06 Warp/SIMT → Writing SIMT Kernels`），避免内容错位。
+
+
 ## 🌟 核心特性 (Key Features)
 
 1. **全书目录树与原文字节解析 (L1 Full-Book Dynamic Parser)**:
@@ -107,7 +151,7 @@ flowchart TD
 - **Python**: 3.10 或 3.11（推荐 3.11）
 - **FFmpeg**: 必备视频编解码工具（项目内置自动挂载机制）
 - **Edge-TTS**: 微软原生高清语音合成（无需任何付费 Key）
-- **DeepSeek API Key**（可选）：用于 LLM 高阶认知提炼；若未配置，系统会自动无缝切换至内置的**确定性算法提炼引擎**。
+- **DeepSeek API Key（必需）**：讲稿与 Manim 分镜完全由 DeepSeek 生成；未配置时程序会明确报错，不再生成本地兜底内容。
 
 ### 2. 一键自检运行环境
 在终端中执行内置的诊断脚本：
@@ -142,9 +186,15 @@ cd CudaStudy
 python -m venv .venv
 .venv\Scripts\activate
 
-# 安装核心依赖
-pip install manim edge-tts customtkinter pypdf av pillow requests imageio-ffmpeg
+# 安装完整依赖（此前 README 遗漏了 pypdf/av/Pillow 等）
+pip install -r requirements.txt
+
+# 配置 DeepSeek（必需）
+copy .env.example .env
+# 编辑 .env 填入 DEEPSEEK_API_KEY=sk-...
 ```
+
+> 也可以在 GUI 输入框里填一次并保持勾选「记住 Key」：验证通过（或点击生成）后会自动写入项目根目录 `.env`，下次启动自动填入。`.env` 已被 git 忽略。
 
 ### 2. 启动桌面可视化控制台
 ```bash
@@ -156,15 +206,23 @@ python app_gui.py
 3. 勾选 **"启用断点续跑"**；
 4. 点击 **"🚀 一键生成 PPT 讲稿与精讲视频"**，即可自动产出 Markdown 幻灯片、HTML 网页课件及最终 MP4 视频！
 
-### 3. 命令行静默批量批处理
-直接调用全书流水线制作指定章节或全书大课：
+### 3. 命令行静默批处理
 ```bash
-# 制作单章节视频 (支持断点续跑)
-python pipeline/full_book_orchestrator.py
+# 生成第 2 节（1-based 目录序号），--force 忽略断点
+python pipeline/full_book_orchestrator.py --section 2 --limit 1
 
-# 运行 CUDA 技术规范静态校验
+# 按课程大纲重做第 6 讲（自动匹配真实 PDF 章节）
+python pipeline/full_book_orchestrator.py --episode 6 --force --max-slides 5
+
+# 校验规则自测
 python pipeline/cuda_validator.py
+
+# 运行契约测试（不需要 API Key / 不联网）
+python -m unittest discover -s tests -v
 ```
+
+> Windows 控制台若为 GBK，建议先 `set PYTHONUTF8=1`，避免 emoji 日志在重定向时触发编码错误。
+
 
 ---
 
@@ -174,10 +232,11 @@ python pipeline/cuda_validator.py
 - **解答**：安装 `imageio-ffmpeg`（`pip install imageio-ffmpeg`），系统已内置自动探测逻辑，无需手动配置 Windows 环境变量即可自动挂载。
 
 ### Q2: Manim 报错 `LaTeX not found` 或公式渲染异常？
-- **解答**：系统已集成自愈保护层。当环境缺失 MiKTeX 或 `dvisvgm` 时，引擎会自动将 `MathTex` 平滑降级为 Unicode 纯文本矢量排版，保障视频渲染 100% 成功不中断。
+- **解答**：v2 的 Storyboard 渲染器不使用 `MathTex`/LaTeX，公式以 Unicode 文本与几何图形表达，因此不依赖 MiKTeX。若你自己扩展了 `assets/storyboard_scene.py` 并引入 `MathTex`，仍需安装 LaTeX。
 
 ### Q3: 运行中断后需要从头开始吗？
-- **解答**：不需要！勾选界面中的 **"启用断点续跑"**，引擎会自动检测已生成的 `clip_slide_*.mp4` 和 `deck.json`，秒级跳过已渲染的分镜，只渲染缺失部分。
+- **解答**：不需要。分页片段按「分镜内容哈希 + 时长 + 画质」命名缓存，重跑时自动复用；讲稿变化时旧片段会自然失效，不会出现“改了脚本还是旧视频”。
+
 
 ---
 

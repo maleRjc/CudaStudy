@@ -1,75 +1,242 @@
+"""
+Central configuration for CudaStudy Video Studio.
+
+Key points:
+- Works both in a dev checkout and in a PyInstaller frozen bundle.
+- Loads a project-local ``.env`` file (no third-party dependency required).
+- Exposes one API-key entry point so the GUI, CLI, detectors and generators
+  all agree on which key is in use.
+- Defines the single video geometry used by every layer: 1280x720 output with a
+  dedicated 88px subtitle band, so burned-in subtitles never cover the picture.
+"""
+
 import os
 import sys
 from pathlib import Path
 
-# Base Paths (Supports both dev environment and packaged PyInstaller .exe)
-if getattr(sys, 'frozen', False):
-    exe_dir = Path(sys.executable).resolve().parent
-    # If running from inside 'dist' directory, project root is the parent folder
-    if exe_dir.name.lower() == "dist":
-        BASE_DIR = exe_dir.parent
-    else:
-        BASE_DIR = exe_dir
-else:
-    BASE_DIR = Path(__file__).resolve().parent
+
+# --------------------------------------------------------------------------
+# Paths (dev checkout + frozen exe)
+# --------------------------------------------------------------------------
+def _resolve_base_dir() -> Path:
+    if getattr(sys, "frozen", False):
+        exe_dir = Path(sys.executable).resolve().parent
+        # Historical layout: <project>/dist/CudaVideoStudio.exe
+        if exe_dir.name.lower() == "dist":
+            return exe_dir.parent
+        return exe_dir
+    return Path(__file__).resolve().parent
+
+
+BASE_DIR = _resolve_base_dir()
+
+
+def _load_dotenv(path: Path) -> None:
+    """Minimal .env loader. Existing environment variables always win."""
+    if not path.exists():
+        return
+    try:
+        for raw_line in path.read_text(encoding="utf-8-sig").splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            key = key.strip()
+            value = value.strip().strip('"').strip("'")
+            if key and key not in os.environ:
+                os.environ[key] = value
+    except OSError:
+        pass
+
+
+_load_dotenv(BASE_DIR / ".env")
+
 DOC_DIR = BASE_DIR / "doc"
 ASSETS_DIR = BASE_DIR / "assets"
 PIPELINE_DIR = BASE_DIR / "pipeline"
 OUTPUT_DIR = BASE_DIR / "output"
 
-# Ensure runtime directories exist
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-(OUTPUT_DIR / "chunks").mkdir(parents=True, exist_ok=True)
-(OUTPUT_DIR / "beats").mkdir(parents=True, exist_ok=True)
-(OUTPUT_DIR / "audio").mkdir(parents=True, exist_ok=True)
-(OUTPUT_DIR / "manim_scenes").mkdir(parents=True, exist_ok=True)
-(OUTPUT_DIR / "videos").mkdir(parents=True, exist_ok=True)
-
-# DeepSeek API Configuration
-# Reads from environment variable or fallback to provided key
-DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
-DEEPSEEK_BASE_URL = os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1")
-DEEPSEEK_MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek-chat")
-
-# TTS Configuration
-# Options: zh-CN-YunxiNeural (沉稳富有张力), zh-CN-XiaoxiaoNeural, zh-CN-YunjianNeural
-TTS_VOICE = os.environ.get("TTS_VOICE", "zh-CN-YunxiNeural")
-TTS_RATE = os.environ.get("TTS_RATE", "-10%")  # -10% Slower, clear, pedagogical articulation
-TTS_VOLUME = os.environ.get("TTS_VOLUME", "+0%")
-
-# Visual & Timing Constants
-DEFAULT_PAUSE_BUFFER = 3.5  # Extended 3.5s deliberate cognitive digestion pause after each slide
-MIN_ACTION_DURATION = 2.0   # Minimum seconds for any visual action
-
-# Default CUDA Document
-DEFAULT_PDF_PATH = BASE_DIR / "cuda-programming-guide.pdf"
-
-# Execution & Checkpoint Cache Mode
-DEFAULT_RESUME_MODE = True  # Automatically resume from cached intermediate steps
-FORCE_REGENERATE = False    # When True, ignores cache and regenerates all slides/audio
-
-# Automatic FFmpeg Auto-Discovery & Path Injection
-def setup_ffmpeg_path():
-    """Ensures ffmpeg is discoverable by system PATH and subprocesses."""
-    import shutil
-    if shutil.which("ffmpeg"):
-        return
-
-    # Check local venv Scripts
-    venv_ffmpeg = BASE_DIR / ".venv" / "Scripts" / "ffmpeg.exe"
-    if venv_ffmpeg.exists():
-        os.environ["PATH"] = f"{venv_ffmpeg.parent};" + os.environ.get("PATH", "")
-        return
-
-    # Check imageio_ffmpeg binary
+# Ensure runtime directories exist (best-effort: a read-only install must not crash)
+for _sub in ("", "chunks", "beats", "audio", "manim_scenes", "videos", "decks", "deep_decks", "slide_images", "curriculum"):
     try:
-        import imageio_ffmpeg
-        ffmpeg_bin = Path(imageio_ffmpeg.get_ffmpeg_exe())
-        if ffmpeg_bin.exists():
-            os.environ["PATH"] = f"{ffmpeg_bin.parent};" + os.environ.get("PATH", "")
-            return
-    except Exception:
+        (OUTPUT_DIR / _sub).mkdir(parents=True, exist_ok=True)
+    except OSError:
         pass
 
-setup_ffmpeg_path()
 
+# --------------------------------------------------------------------------
+# DeepSeek API
+# --------------------------------------------------------------------------
+DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "").strip()
+DEEPSEEK_BASE_URL = os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1").rstrip("/")
+DEEPSEEK_MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek-chat")
+DEEPSEEK_TIMEOUT = int(os.environ.get("DEEPSEEK_TIMEOUT", "120"))
+DEEPSEEK_MAX_TOKENS = int(os.environ.get("DEEPSEEK_MAX_TOKENS", "8192"))
+
+
+def set_api_key(key: str) -> None:
+    """Single entry point used by the GUI/CLI to activate a key for this process."""
+    global DEEPSEEK_API_KEY
+    key = (key or "").strip()
+    DEEPSEEK_API_KEY = key
+    if key:
+        os.environ["DEEPSEEK_API_KEY"] = key
+    else:
+        os.environ.pop("DEEPSEEK_API_KEY", None)
+
+
+def save_api_key(key: str) -> Path:
+    """
+    Persist the key to ``<project>/.env`` so the GUI fills it next launch.
+
+    Existing comments/settings are preserved; only DEEPSEEK_API_KEY is replaced.
+    ``.env`` is already ignored by git.
+    """
+    key = (key or "").strip()
+    if not key:
+        raise ValueError("API key is empty")
+
+    env_path = Path(BASE_DIR) / ".env"
+    lines = []
+    if env_path.exists():
+        try:
+            lines = env_path.read_text(encoding="utf-8-sig").splitlines()
+        except OSError:
+            lines = []
+
+    replaced = False
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped.startswith("#") or "=" not in stripped:
+            continue
+        name = stripped.split("=", 1)[0].strip()
+        if name == "DEEPSEEK_API_KEY":
+            lines[index] = f"DEEPSEEK_API_KEY={key}"
+            replaced = True
+            break
+    if not replaced:
+        if lines and lines[-1].strip():
+            lines.append("")
+        lines.append(f"DEEPSEEK_API_KEY={key}")
+
+    env_path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = env_path.with_name(".env.tmp")
+    temporary.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    temporary.replace(env_path)
+
+    set_api_key(key)
+    return env_path
+
+
+def clear_api_key() -> Path:
+    """Remove the saved key from .env, preserving all other settings."""
+    env_path = Path(BASE_DIR) / ".env"
+    if env_path.exists():
+        lines = []
+        try:
+            lines = env_path.read_text(encoding="utf-8-sig").splitlines()
+        except OSError:
+            lines = []
+        kept = []
+        for line in lines:
+            stripped = line.strip()
+            if not stripped.startswith("#") and "=" in stripped:
+                name = stripped.split("=", 1)[0].strip()
+                if name == "DEEPSEEK_API_KEY":
+                    continue
+            kept.append(line)
+        temporary = env_path.with_name(".env.tmp")
+        temporary.write_text("\n".join(kept).rstrip() + "\n", encoding="utf-8")
+        temporary.replace(env_path)
+    set_api_key("")
+    return env_path
+
+
+def api_key() -> str:
+    """Always read from the live environment so a GUI-entered key takes effect."""
+    return (os.environ.get("DEEPSEEK_API_KEY") or DEEPSEEK_API_KEY or "").strip()
+
+
+def has_api_key() -> bool:
+    return bool(api_key())
+
+
+# --------------------------------------------------------------------------
+# Video geometry: 1280x720 total = 1280x632 content + 88px subtitle band
+# --------------------------------------------------------------------------
+VIDEO_WIDTH = 1280
+VIDEO_HEIGHT = 720
+SUBTITLE_BAND_HEIGHT = 88
+CONTENT_WIDTH = VIDEO_WIDTH
+CONTENT_HEIGHT = VIDEO_HEIGHT - SUBTITLE_BAND_HEIGHT  # 632
+VIDEO_FPS = 30
+
+# Manim renders directly at the content size (no scaling artefacts).
+MANIM_RESOLUTION = f"{CONTENT_WIDTH},{CONTENT_HEIGHT}"
+MANIM_FRAME_RATE = str(VIDEO_FPS)
+
+# Legacy quality flag kept for the old template renderer.
+MANIM_QUALITY = os.environ.get("MANIM_QUALITY", "-qm")
+
+# TTS
+TTS_VOICE = os.environ.get("TTS_VOICE", "zh-CN-YunxiNeural")
+TTS_RATE = os.environ.get("TTS_RATE", "-8%")
+TTS_VOLUME = os.environ.get("TTS_VOLUME", "+0%")
+
+# Timing
+DEFAULT_PAUSE_BUFFER = float(os.environ.get("PAUSE_BUFFER", "2.2"))
+MIN_ACTION_DURATION = 2.0
+MAX_SLIDES_PER_SECTION = int(os.environ.get("MAX_SLIDES_PER_SECTION", "10"))
+
+# Execution
+DEFAULT_RESUME_MODE = True
+FORCE_REGENERATE = False
+
+# Default CUDA document
+DEFAULT_PDF_PATH = BASE_DIR / "cuda-programming-guide.pdf"
+
+# Bump when deck/scene schemas change so on-disk caches are invalidated.
+SCHEMA_VERSION = "2026.11-content-v10"
+
+# Bump when subtitle layout/segmentation changes, so already-rendered videos get
+# re-composited (clips are reused; only SRT + burn are redone).
+SUBTITLE_VERSION = "single-line-v4"
+
+
+# --------------------------------------------------------------------------
+# FFmpeg auto-discovery
+# --------------------------------------------------------------------------
+def ffmpeg_binary() -> Path:
+    """Return a usable ffmpeg path (venv -> imageio-ffmpeg -> PATH)."""
+    import shutil
+
+    found = shutil.which("ffmpeg")
+    if found:
+        return Path(found)
+
+    candidates = [
+        BASE_DIR / ".venv" / "Scripts" / "ffmpeg.exe",
+        Path(sys.executable).resolve().parent / "ffmpeg.exe",
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+
+    try:
+        import imageio_ffmpeg
+
+        return Path(imageio_ffmpeg.get_ffmpeg_exe())
+    except Exception:
+        return Path("ffmpeg")
+
+
+def setup_ffmpeg_path() -> None:
+    binary = ffmpeg_binary()
+    if binary.name.lower() in ("ffmpeg", "ffmpeg.exe") and not binary.exists():
+        return
+    parent = str(binary.parent)
+    if parent and parent not in os.environ.get("PATH", ""):
+        os.environ["PATH"] = parent + os.pathsep + os.environ.get("PATH", "")
+
+
+setup_ffmpeg_path()

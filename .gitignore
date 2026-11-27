@@ -8,12 +8,18 @@ __pycache__/
 *$py.class
 *.spec
 
+# Secrets
+.env
+.env.*
+!.env.example
+
 # PyInstaller build outputs & large binaries
 build/
 dist/
 *.exe
 
 # Large media outputs (videos, audio clips, manim frames)
+output/
 output/audio/
 output/videos/
 output/slide_images/

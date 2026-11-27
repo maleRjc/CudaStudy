@@ -4,6 +4,7 @@ Generates beautiful, standalone slide presentations (.md and .html)
 from the technical PPT deck structure extracted from the PDF documentation.
 """
 
+import html
 import json
 from pathlib import Path
 from typing import Dict, Any, List
@@ -98,14 +99,14 @@ def export_deck_to_html_presentation(deck: Dict[str, Any], output_path: Path) ->
         visual = slide.get("visual_spec", {})
         code_badge = visual.get("code_badge", "")
 
-        bullets_html = "".join([f"<li><strong>{pt}</strong></li>" for pt in key_points])
-        code_html = f"<div class='code-block'><code>{code_badge}</code></div>" if code_badge else ""
+        bullets_html = "".join([f"<li><strong>{html.escape(str(pt))}</strong></li>" for pt in key_points])
+        code_html = f"<div class='code-block'><code>{html.escape(str(code_badge))}</code></div>" if code_badge else ""
 
         slides_html.append(f"""
         <div class="slide" id="slide-{idx}">
             <div class="slide-header">
-                <span class="slide-badge">Slide {idx} / {len(slides)} · {s_type}</span>
-                <h2>{s_title}</h2>
+                <span class="slide-badge">Slide {idx} / {len(slides)} · {html.escape(str(s_type))}</span>
+                <h2>{html.escape(str(s_title))}</h2>
             </div>
             {code_html}
             <div class="slide-body">
@@ -115,7 +116,7 @@ def export_deck_to_html_presentation(deck: Dict[str, Any], output_path: Path) ->
                 </div>
                 <div class="narration-section">
                     <h3>🎙️ 讲师详细口播讲稿</h3>
-                    <p>{narration}</p>
+                    <p>{html.escape(str(narration))}</p>
                 </div>
             </div>
         </div>
@@ -125,7 +126,7 @@ def export_deck_to_html_presentation(deck: Dict[str, Any], output_path: Path) ->
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>{topic} - PPT讲解文档</title>
+    <title>{html.escape(str(topic))} - PPT讲解文档</title>
     <style>
         body {{
             margin: 0;
@@ -217,7 +218,7 @@ def export_deck_to_html_presentation(deck: Dict[str, Any], output_path: Path) ->
 <body>
     <div class="deck-container">
         <div class="deck-title">
-            <h1>{topic}</h1>
+            <h1>{html.escape(str(topic))}</h1>
             <p style="color: #8B949E; margin: 0;">《CUDA C++ Programming Guide》自动提取 PPT 讲解文档</p>
         </div>
         {"".join(slides_html)}
